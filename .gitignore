@@ -15,3 +15,8 @@
 !.env.example
 *.bicep.cache
 infra/*.jsonc
+
+# AZD local state and generated artifacts
+.azure/**
+.azure/.gitignore
+.azure/deployment-plan.md

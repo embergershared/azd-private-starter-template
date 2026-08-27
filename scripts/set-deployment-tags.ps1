@@ -15,10 +15,42 @@ function Invoke-Azd {
     }
 }
 
+function Get-RequiredEnvironmentValue {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $value = & azd env get-value $Name 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($value)) {
+        throw "Required azd environment value '$Name' is not set."
+    }
+
+    return $value.Trim()
+}
+
 foreach ($command in @('az', 'azd')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "Required command '$command' was not found."
     }
+}
+
+. (Join-Path $PSScriptRoot 'naming.ps1')
+
+$subscriptionId = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_ID'
+$subscriptionName = & az account show --subscription $subscriptionId `
+    --query name --output tsv --only-show-errors
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($subscriptionName)) {
+    throw "Unable to read the display name for subscription '$subscriptionId'."
+}
+$derivedSubscriptionCode = Get-SubscriptionCode -SubscriptionName $subscriptionName
+$cachedSubscriptionCode = (& azd env get-value AZURE_SUBSCRIPTION_CODE 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($cachedSubscriptionCode)) {
+    Invoke-Azd -Arguments @('env', 'set', 'AZURE_SUBSCRIPTION_CODE', $derivedSubscriptionCode)
+}
+elseif ($cachedSubscriptionCode.Trim() -cne $derivedSubscriptionCode) {
+    $null = Assert-SubscriptionCode -SubscriptionName $subscriptionName `
+        -CachedCode $cachedSubscriptionCode
 }
 
 $timeZone = [TimeZoneInfo]::FindSystemTimeZoneById(

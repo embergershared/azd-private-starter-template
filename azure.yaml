@@ -13,7 +13,7 @@ hooks:
     run: |
       $profile = azd env get-value DEPLOYMENT_PROFILE 2>$null
       if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($profile)) {
-        azd env set DEPLOYMENT_PROFILE minimal
+        azd env set DEPLOYMENT_PROFILE full
         if ($LASTEXITCODE -ne 0) { throw "Unable to initialize DEPLOYMENT_PROFILE." }
       }
       ./scripts/set-deployment-tags.ps1

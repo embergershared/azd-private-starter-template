@@ -3,6 +3,8 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'naming.ps1')
+
 function Invoke-AzJson {
     param(
         [Parameter(Mandatory)]
@@ -40,9 +42,10 @@ foreach ($command in @('az', 'azd')) {
 $subscriptionId = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_ID'
 $location = Get-RequiredEnvironmentValue -Name 'AZURE_LOCATION'
 $environmentName = Get-RequiredEnvironmentValue -Name 'AZURE_ENV_NAME'
+$cachedSubscriptionCode = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_CODE'
 $profile = (& azd env get-value DEPLOYMENT_PROFILE 2>$null)
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($profile)) {
-    $profile = 'minimal'
+    $profile = 'full'
 }
 $profile = $profile.Trim()
 
@@ -123,11 +126,15 @@ $account = Invoke-AzJson -Arguments @('account', 'show', '--subscription', $subs
 if ($account.state -ne 'Enabled') {
     throw "Subscription '$subscriptionId' is not enabled."
 }
+$null = Assert-SubscriptionCode -SubscriptionName $account.name `
+    -CachedCode $cachedSubscriptionCode
 
 $locations = Invoke-AzJson -Arguments @('account', 'list-locations', '--query', "[?name=='$location'].name")
 if ($locations.Count -eq 0) {
     throw "Azure location '$location' is not recognized."
 }
+$locationCatalogPath = Join-Path $PSScriptRoot '..\infra\location-codes.json'
+$locationCode = Get-LocationCode -Location $location -CatalogPath $locationCatalogPath
 
 $providers = @(
     'Microsoft.Authorization',
@@ -244,4 +251,4 @@ if ($featureSettings.windowsVm -or $featureSettings.linuxVm) {
     }
 }
 
-Write-Output "Preflight passed for environment '$environmentName' using profile '$profile' in '$location'."
+Write-Output "Preflight passed for environment '$environmentName' using profile '$profile' in '$location' ($locationCode) and subscription code '$cachedSubscriptionCode'."

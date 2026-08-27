@@ -36,30 +36,56 @@ RBAC assignments, and shutdown schedules. See
 ## Naming contract
 
 Resource names are derived centrally in `infra/main.bicep` from the AZD
-environment, region, and `infra/abbreviations.json`.
+environment, the approved region code in `infra/location-codes.json`, the
+cached subscription code, and `infra/abbreviations.json`. The standard order is
+`<resource-prefix>-<location-code>-<subscription-code>-<environment>`.
 
 | Resource | Prefix | Constraint handling |
 |---|---|---|
-| Resource group | `rg-` | Environment and region; maximum 90 characters |
-| Application Insights | `appins-` | Environment and deterministic regional suffix |
-| Log Analytics workspace | `law-` | Environment and deterministic regional suffix; maximum 63 characters |
-| Private endpoint | `pe-` | Service-specific suffix such as `blob` or `file` |
-| Private endpoint NIC | `pe-nic-` | Explicit `customNetworkInterfaceName`; maximum 80 characters |
-| Virtual network | `vnet-` | Environment and deterministic regional suffix; maximum 64 characters |
-| Subnet | `snet-` | Purpose suffix; Bastion must use reserved `AzureBastionSubnet` |
-| Network security group | `nsg-` | VNet and subnet purpose |
-| Azure Bastion | `bast-` | Environment and deterministic regional suffix |
-| NAT Gateway | `natgw-` | Environment and deterministic regional suffix |
-| Windows VM | `vm-win-` | Compact environment segment and three-character suffix; maximum 15 characters |
-| Linux VM | `vm-lin-` | Environment and deterministic regional suffix; maximum 64 characters |
-| Storage account | `stacct` | Lowercase alphanumeric only; maximum 24 characters |
-| Key Vault | `kv-` | Lowercase alphanumeric and hyphens; maximum 24 characters |
+| Resource group | `rg-` | Standard segment order; maximum 90 characters |
+| Application Insights | `appins-` | Standard segment order |
+| Log Analytics workspace | `law-` | Standard segment order; maximum 63 characters |
+| Private endpoint | `pe-` | Standard segment order plus `kv`, `blob`, or `file` purpose |
+| Private endpoint NIC | `pe-nic-` | Explicit `customNetworkInterfaceName`; standard order plus purpose; maximum 80 characters |
+| Virtual network | `vnet-` | Standard segment order; maximum 64 characters |
+| Subnet | `snet-` | Standard order plus purpose; Bastion keeps reserved `AzureBastionSubnet` |
+| Network security group | `nsg-` | Standard order plus subnet purpose |
+| Public IP | `pip-` | Standard order plus `bastion` or `nat` purpose |
+| Azure Bastion | `bast-` | Standard segment order |
+| NAT Gateway | `natgw-` | Standard segment order |
+| Windows VM | `vm-win-` | Standard segment order; guest hostname is separately capped at 15 characters |
+| Linux VM | `vm-lin-` | Standard segment order; maximum 64 characters |
+| VM NIC | `nic-` | Standard order plus `win` or `lin` purpose |
+| Storage account | `stacct` | Separators removed; lowercase alphanumeric; environment truncated; three-character hash retained; maximum 24 characters |
+| Key Vault | `kv-` | Environment truncated; three-character hash retained; maximum 24 characters |
+
+For example, East US 2, subscription
+`ME-MngEnvMCAP300003-emberger-1`, and AZD environment `poc` produce the common
+base `use2-s1-poc`. East US 2 maps to `use2`; West US 3 maps to `usw3`; Canada
+Central maps to `cac`.
+
+The location catalog covers approved Azure public-cloud regions. Codes are
+lowercase, country-first, unique, and stable after publication. Preflight fails
+closed when a location is not mapped. Add new Azure regions to the shared JSON
+catalog only after reviewing the proposed code for collisions; do not change a
+published code for an existing region.
+
+The subscription code is `s` plus the final hyphen-delimited 1-4 digit token in
+the active subscription display name. It is cached in the AZD environment on
+first initialization and verified on every preflight. A subscription rename
+that changes the derived code blocks provisioning so it cannot silently change
+resource identities.
 
 Storage and Key Vault use a stable three-character uniqueness suffix derived
-from the subscription, environment, and region. This behaves like randomized
-uniqueness across environments while remaining idempotent on every
-redeployment. Because three characters provide a deliberately small uniqueness
+from the subscription ID, complete environment name, and canonical region.
+Truncating their displayed environment segment therefore does not truncate the
+hash inputs. Because three characters provide a deliberately small uniqueness
 space, always inspect preview for a global-name collision before deployment.
+
+The Windows Azure VM resource name follows the standard order. Its guest
+hostname is independently derived as `w-<compact-environment>-<hash>` so the
+resource name can stay descriptive without violating the 15-character Windows
+computer-name limit.
 
 ## Deliberate public exceptions
 

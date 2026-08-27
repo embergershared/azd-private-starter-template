@@ -25,9 +25,10 @@ azd env set DEPLOYMENT_PROFILE minimal # or full
 | Name | Purpose |
 |---|---|
 | `AZURE_ENV_NAME` | Lowercase 2–32 character environment name; initialized by `azd env new` |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription GUID |
+| `AZURE_SUBSCRIPTION_ID` | Target subscription GUID; its display name must end in a hyphen and 1-4 digits |
+| `AZURE_SUBSCRIPTION_CODE` | Internal cached `s<digits>` code initialized and verified by `set-deployment-tags.ps1` |
 | `AZURE_LOCATION` | Azure region, default design target `eastus2` |
-| `DEPLOYMENT_PROFILE` | `minimal` or `full`; hook defaults to `minimal` |
+| `DEPLOYMENT_PROFILE` | `minimal` or `full`; hook defaults to `full` |
 | `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs |
 | `AZURE_FEATURE_OVERRIDES_JSON` | Expert feature object; hook defaults to `{}` |
 
@@ -35,10 +36,17 @@ The hook base64-encodes override JSON into the internal
 `AZURE_FEATURE_OVERRIDES_BASE64` transport value so AZD can substitute it into
 ARM parameter JSON without quote corruption. Do not edit the encoded value.
 
-The environment helper seeds `AZURE_CREATED_ON` once, and the pre-provision
-hook refreshes `AZURE_LAST_UPDATED_ON` on each provision using
-America/New_York time with an explicit UTC offset. Do not edit these lifecycle
-values casually.
+The environment helper derives `AZURE_SUBSCRIPTION_CODE` from the active
+subscription display name, seeds it with `AZURE_CREATED_ON`, and verifies it on
+later runs. The display name must end in a final hyphen-delimited 1-4 digit
+token; for example, `ME-MngEnvMCAP300003-emberger-3` derives `s3`. If a
+subscription rename would derive a different code, preflight fails instead of
+silently changing resource identities. Review the replacement impact before
+manually updating the cached code.
+
+The pre-provision hook refreshes `AZURE_LAST_UPDATED_ON` on each provision
+using America/New_York time with an explicit UTC offset. Do not edit these
+lifecycle values casually.
 
 After `azd env new` and the required `azd env set` commands, initialize the
 first-use values once:
@@ -102,10 +110,15 @@ provider only when that enrollment is intentional; Microsoft Intune uses
 
 ## Resource naming
 
-The template enforces resource-specific prefixes and Azure length/character
-constraints in `infra/main.bicep`; see the
+The template enforces the
+`<resource-prefix>-<location-code>-<subscription-code>-<environment>` order and
+resource-specific length/character constraints in `infra/main.bicep`; see the
 [architecture naming contract](architecture.md#naming-contract). Do not encode
 custom resource names in AZD environment values. Changing a prefix or suffix
 replaces resources whose Azure names are immutable, so review the preview for
 data migration, retained resources, downtime, and additional cost before
 provisioning an existing environment.
+
+`infra/location-codes.json` is the shared public-cloud location catalog used by
+Bicep and preflight. An Azure location that is valid but not yet mapped fails
+closed until the catalog receives a reviewed, unique country-first code.

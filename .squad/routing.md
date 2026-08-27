@@ -6,12 +6,13 @@ How to decide who handles what.
 
 | Work Type | Route To | Examples |
 |-----------|----------|----------|
-| {domain 1} | {Name} | {example tasks} |
-| {domain 2} | {Name} | {example tasks} |
-| {domain 3} | {Name} | {example tasks} |
-| Code review | {Name} | Review PRs, check quality, suggest improvements |
-| Testing | {Name} | Write tests, find edge cases, verify fixes |
-| Scope & priorities | {Name} | What to build next, trade-offs, decisions |
+| Architecture and scope | Morpheus | Deployment contracts, module boundaries, trade-offs |
+| Azure infrastructure | Trinity | AZD, Bicep, networking, compute, deployment profiles |
+| Security and identity | Neo | Private access, managed identity, RBAC, threat review |
+| Validation and testing | Tank | Bicep build/lint, preview behavior, profile edge cases |
+| Documentation | Switch | README, configuration guidance, deployment plan synchronization |
+| Code review | Morpheus | Review changes, check architecture and quality |
+| Scope & priorities | Morpheus | What to build next, trade-offs, decisions |
 | Session logging | Scribe | Automatic — never needs routing |
 | RAI review | Rai | Content safety, bias checks, credential detection, ethical review |
 
@@ -20,7 +21,11 @@ How to decide who handles what.
 | Label | Action | Who |
 |-------|--------|-----|
 | `squad` | Triage: analyze issue, assign `squad:{member}` label | Lead |
-| `squad:{name}` | Pick up issue and complete the work | Named member |
+| `squad:morpheus` | Architecture, scope, or review work | Morpheus |
+| `squad:trinity` | Azure infrastructure work | Trinity |
+| `squad:neo` | Security and identity work | Neo |
+| `squad:tank` | Validation and testing work | Tank |
+| `squad:switch` | Documentation work | Switch |
 
 ### How Issue Assignment Works
 

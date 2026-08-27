@@ -8,12 +8,17 @@ param environmentName string
 @description('Azure region for the resource group and regional resources.')
 param location string = 'eastus2'
 
+@description('Stable code derived from the final numeric token of the Azure subscription display name.')
+@minLength(2)
+@maxLength(5)
+param subscriptionCode string
+
 @description('Deployment profile. Minimal excludes VMs, Bastion, NAT, and Entra login; full enables them plus shutdown schedules.')
 @allowed([
   'minimal'
   'full'
 ])
-param deploymentProfile string = 'minimal'
+param deploymentProfile string = 'full'
 
 @description('Repository identifier applied to common tags.')
 @minLength(1)
@@ -127,17 +132,45 @@ param shutdownTime string = '1900'
 param shutdownTimeZone string = 'Eastern Standard Time'
 
 var abbreviations = loadJsonContent('./abbreviations.json')
+var locationCodes = loadJsonContent('./location-codes.json')
+var locationCode = string(locationCodes[location])
 var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
-var uniqueSuffix = take(uniqueString(subscription().id, environmentName, location), 6)
-var shortUniqueSuffix = take(uniqueSuffix, 3)
-var resourceGroupName = take('${abbreviations.resourceGroup}-${environmentName}-${location}', 90)
-var vnetName = take('${abbreviations.virtualNetwork}-${environmentName}-${uniqueSuffix}', 64)
-var keyVaultName = '${abbreviations.keyVault}-${take(normalizedEnvironmentName, 17)}-${shortUniqueSuffix}'
-var storageAccountName = '${abbreviations.storageAccount}${take(normalizedEnvironmentName, 15)}${shortUniqueSuffix}'
-var logAnalyticsName = take('${abbreviations.logAnalytics}-${environmentName}-${uniqueSuffix}', 63)
-var appInsightsName = take('${abbreviations.applicationInsights}-${environmentName}-${uniqueSuffix}', 255)
-var windowsVmName = '${abbreviations.windowsVirtualMachine}-${take(normalizedEnvironmentName, 4)}-${shortUniqueSuffix}'
-var linuxVmName = take('${abbreviations.linuxVirtualMachine}-${environmentName}-${uniqueSuffix}', 64)
+var shortUniqueSuffix = take(uniqueString(subscription().id, environmentName, location), 3)
+var baseName = '${locationCode}-${subscriptionCode}-${environmentName}'
+var keyVaultEnvironmentLength = max(
+  1,
+  24 - length('${abbreviations.keyVault}-${locationCode}-${subscriptionCode}--${shortUniqueSuffix}')
+)
+var storageEnvironmentLength = max(
+  1,
+  24 - length('${abbreviations.storageAccount}${locationCode}${subscriptionCode}${shortUniqueSuffix}')
+)
+var resourceGroupName = '${abbreviations.resourceGroup}-${baseName}'
+var vnetName = '${abbreviations.virtualNetwork}-${baseName}'
+var bastionNsgName = '${abbreviations.networkSecurityGroup}-${baseName}-bastion'
+var jumpboxNsgName = '${abbreviations.networkSecurityGroup}-${baseName}-jumpboxes'
+var privateEndpointNsgName = '${abbreviations.networkSecurityGroup}-${baseName}-private-endpoints'
+var jumpboxSubnetName = '${abbreviations.subnet}-${baseName}-jumpboxes'
+var privateEndpointSubnetName = '${abbreviations.subnet}-${baseName}-private-endpoints'
+var keyVaultName = '${abbreviations.keyVault}-${locationCode}-${subscriptionCode}-${take(normalizedEnvironmentName, keyVaultEnvironmentLength)}-${shortUniqueSuffix}'
+var keyVaultPrivateEndpointName = '${abbreviations.privateEndpoint}-${baseName}-kv'
+var keyVaultPrivateEndpointNicName = '${abbreviations.privateEndpointNetworkInterface}-${baseName}-kv'
+var storageAccountName = '${abbreviations.storageAccount}${locationCode}${subscriptionCode}${take(normalizedEnvironmentName, storageEnvironmentLength)}${shortUniqueSuffix}'
+var blobPrivateEndpointName = '${abbreviations.privateEndpoint}-${baseName}-blob'
+var blobPrivateEndpointNicName = '${abbreviations.privateEndpointNetworkInterface}-${baseName}-blob'
+var filePrivateEndpointName = '${abbreviations.privateEndpoint}-${baseName}-file'
+var filePrivateEndpointNicName = '${abbreviations.privateEndpointNetworkInterface}-${baseName}-file'
+var logAnalyticsName = '${abbreviations.logAnalytics}-${baseName}'
+var appInsightsName = '${abbreviations.applicationInsights}-${baseName}'
+var natGatewayName = '${abbreviations.natGateway}-${baseName}'
+var natGatewayPublicIpName = '${abbreviations.publicIp}-${baseName}-nat'
+var bastionName = '${abbreviations.bastion}-${baseName}'
+var bastionPublicIpName = '${abbreviations.publicIp}-${baseName}-bastion'
+var windowsVmName = '${abbreviations.windowsVirtualMachine}-${baseName}'
+var windowsComputerName = 'w-${take(normalizedEnvironmentName, 9)}-${shortUniqueSuffix}'
+var windowsNicName = '${abbreviations.networkInterface}-${baseName}-win'
+var linuxVmName = '${abbreviations.linuxVirtualMachine}-${baseName}'
+var linuxNicName = '${abbreviations.networkInterface}-${baseName}-lin'
 var commonTags = union(
   {
     repository: repository
@@ -193,7 +226,8 @@ module natGateway './modules/nat-gateway.bicep' = {
   name: 'nat-gateway'
   scope: resourceGroup
   params: {
-    name: '${abbreviations.natGateway}-${environmentName}-${uniqueSuffix}'
+    name: natGatewayName
+    publicIpName: natGatewayPublicIpName
     location: location
     tags: commonTags
     enabled: deployNatGateway
@@ -205,8 +239,11 @@ module network './modules/network.bicep' = {
   scope: resourceGroup
   params: {
     name: vnetName
-    networkSecurityGroupPrefix: abbreviations.networkSecurityGroup
-    subnetPrefix: abbreviations.subnet
+    bastionNetworkSecurityGroupName: bastionNsgName
+    jumpboxNetworkSecurityGroupName: jumpboxNsgName
+    privateEndpointNetworkSecurityGroupName: privateEndpointNsgName
+    jumpboxSubnetName: jumpboxSubnetName
+    privateEndpointSubnetName: privateEndpointSubnetName
     location: location
     tags: commonTags
     vnetAddressPrefix: vnetAddressPrefix
@@ -247,8 +284,8 @@ module keyVault './modules/key-vault.bicep' = {
   scope: resourceGroup
   params: {
     name: keyVaultName
-    privateEndpointName: '${abbreviations.privateEndpoint}-${keyVaultName}'
-    privateEndpointNetworkInterfaceName: '${abbreviations.privateEndpointNetworkInterface}-${keyVaultName}'
+    privateEndpointName: keyVaultPrivateEndpointName
+    privateEndpointNetworkInterfaceName: keyVaultPrivateEndpointNicName
     location: location
     tags: commonTags
     privateEndpointSubnetId: network.outputs.privateEndpointSubnetId
@@ -273,10 +310,10 @@ module storage './modules/storage.bicep' = {
   scope: resourceGroup
   params: {
     name: storageAccountName
-    blobPrivateEndpointName: '${abbreviations.privateEndpoint}-${storageAccountName}-blob'
-    blobPrivateEndpointNetworkInterfaceName: '${abbreviations.privateEndpointNetworkInterface}-${storageAccountName}-blob'
-    filePrivateEndpointName: '${abbreviations.privateEndpoint}-${storageAccountName}-file'
-    filePrivateEndpointNetworkInterfaceName: '${abbreviations.privateEndpointNetworkInterface}-${storageAccountName}-file'
+    blobPrivateEndpointName: blobPrivateEndpointName
+    blobPrivateEndpointNetworkInterfaceName: blobPrivateEndpointNicName
+    filePrivateEndpointName: filePrivateEndpointName
+    filePrivateEndpointNetworkInterfaceName: filePrivateEndpointNicName
     location: location
     tags: commonTags
     privateEndpointSubnetId: network.outputs.privateEndpointSubnetId
@@ -292,7 +329,8 @@ module bastion './modules/bastion.bicep' = if (deployBastion) {
   name: 'bastion'
   scope: resourceGroup
   params: {
-    name: '${abbreviations.bastion}-${environmentName}-${uniqueSuffix}'
+    name: bastionName
+    publicIpName: bastionPublicIpName
     location: location
     tags: commonTags
     bastionSubnetId: network.outputs.bastionSubnetId
@@ -305,7 +343,10 @@ module jumpboxes './modules/jumpboxes.bicep' = if (deployAnyVm) {
   scope: resourceGroup
   params: {
     windowsVmName: windowsVmName
+    windowsComputerName: windowsComputerName
+    windowsNicName: windowsNicName
     linuxVmName: linuxVmName
+    linuxNicName: linuxNicName
     location: location
     tags: commonTags
     jumpboxSubnetId: network.outputs.jumpboxSubnetId

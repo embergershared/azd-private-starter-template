@@ -3,12 +3,21 @@ targetScope = 'resourceGroup'
 @minLength(2)
 @maxLength(64)
 param name string
-@minLength(1)
-@maxLength(10)
-param networkSecurityGroupPrefix string
-@minLength(1)
-@maxLength(10)
-param subnetPrefix string
+@minLength(2)
+@maxLength(80)
+param bastionNetworkSecurityGroupName string
+@minLength(2)
+@maxLength(80)
+param jumpboxNetworkSecurityGroupName string
+@minLength(2)
+@maxLength(80)
+param privateEndpointNetworkSecurityGroupName string
+@minLength(2)
+@maxLength(80)
+param jumpboxSubnetName string
+@minLength(2)
+@maxLength(80)
+param privateEndpointSubnetName string
 param location string = resourceGroup().location
 param tags object = {}
 param vnetAddressPrefix string
@@ -18,15 +27,10 @@ param privateEndpointSubnetPrefix string
 param enableNatGateway bool = false
 param natGatewayId string = ''
 
-var bastionNsgName = '${networkSecurityGroupPrefix}-${name}-bastion'
-var jumpboxNsgName = '${networkSecurityGroupPrefix}-${name}-jumpboxes'
-var privateEndpointNsgName = '${networkSecurityGroupPrefix}-${name}-private-endpoints'
 var bastionSubnetName = 'AzureBastionSubnet'
-var jumpboxSubnetName = '${subnetPrefix}-jumpboxes'
-var privateEndpointSubnetName = '${subnetPrefix}-private-endpoints'
 
 resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: bastionNsgName
+  name: bastionNetworkSecurityGroupName
   location: location
   tags: tags
   properties: {
@@ -251,7 +255,7 @@ var jumpboxOutboundRules = concat(
 )
 
 resource jumpboxNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: jumpboxNsgName
+  name: jumpboxNetworkSecurityGroupName
   location: location
   tags: tags
   properties: {
@@ -303,7 +307,7 @@ resource jumpboxNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
 }
 
 resource privateEndpointNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: privateEndpointNsgName
+  name: privateEndpointNetworkSecurityGroupName
   location: location
   tags: tags
   properties: {

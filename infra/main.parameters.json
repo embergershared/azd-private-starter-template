@@ -8,8 +8,11 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
+    "subscriptionCode": {
+      "value": "${AZURE_SUBSCRIPTION_CODE}"
+    },
     "deploymentProfile": {
-      "value": "${DEPLOYMENT_PROFILE}"
+      "value": "${DEPLOYMENT_PROFILE=full}"
     },
     "featureOverridesBase64": {
       "value": "${AZURE_FEATURE_OVERRIDES_BASE64}"

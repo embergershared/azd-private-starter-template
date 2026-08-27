@@ -53,6 +53,10 @@ jobs:
               }
             }
 
+      - name: Validate naming contract
+        shell: pwsh
+        run: ./scripts/test-naming.ps1
+
       - name: Build Bicep
         run: az bicep build --file infra/main.bicep
 

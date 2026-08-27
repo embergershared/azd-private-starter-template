@@ -21,6 +21,10 @@ The deployment identity needs:
 - Read access to subscription, provider, quota, SKU, and Marketplace image
   metadata used by preflight.
 
+  The target subscription display name must end in a hyphen-delimited 1-4 digit
+  token. The initialization helper caches that token as `s<digits>` for resource
+  naming, and preflight blocks if a later subscription rename would change it.
+
 Configured operator principals receive:
 
 - **Virtual Machine User Login** on each Entra-enabled VM.
@@ -78,8 +82,9 @@ azd env set AZURE_OPERATOR_PRINCIPAL_IDS <entra-object-guid>
 ```
 
 The final command is a required one-time bootstrap for each new environment.
-AZD resolves required Bicep parameters before running pre-provision hooks; later
-provisions refresh update metadata automatically.
+It initializes the stable subscription code and lifecycle values. AZD resolves
+required Bicep parameters before running pre-provision hooks; later provisions
+verify the code and refresh update metadata automatically.
 
 ## 2. Validate
 
@@ -90,6 +95,7 @@ operator IDs, VM SKU quota/restrictions, and Windows image visibility.
 ```powershell
 Get-ChildItem -Recurse -Filter *.json |
   ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null }
+.\scripts\test-naming.ps1
 az bicep build --file infra\main.bicep
 az bicep lint --file infra\main.bicep
 azd provision --preview -e <environment>

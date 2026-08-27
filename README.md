@@ -14,14 +14,25 @@ Entra login, and auto-shutdown.
 4. Read the [security and private-access model](docs/security.md).
 
 ```powershell
+# Variables values
+$subscriptionId = '<subscription-guid>'
+# Use a lowercase, unique 2-32 character environment name.
+$environment = 'my-azd-env-dev'
+$location = 'eastus2'
+$profile = 'full' # minimal or full
+
+# Commands execution
+az login
+az account set --subscription $subscriptionId
 azd auth login
-azd env new <environment>
-azd env set AZURE_SUBSCRIPTION_ID <subscription-guid>
-azd env set AZURE_LOCATION eastus2
-azd env set DEPLOYMENT_PROFILE minimal
-azd env set AZURE_OPERATOR_PRINCIPAL_IDS <entra-object-guid>
+$operatorId = az ad signed-in-user show --query id --output tsv
+azd env new $environment
+azd env set AZURE_SUBSCRIPTION_ID $subscriptionId
+azd env set AZURE_LOCATION $location
+azd env set DEPLOYMENT_PROFILE $profile
+azd env set AZURE_OPERATOR_PRINCIPAL_IDS $operatorId
 .\scripts\set-deployment-tags.ps1
-azd provision --preview -e <environment>
+azd provision --preview -e $environment
 ```
 
 Preview is not deployment. Do not run `azd provision` or `azd up` until the
@@ -29,7 +40,9 @@ validation gate and deployment approval are complete.
 
 Run `set-deployment-tags.ps1` once after creating an environment. AZD resolves
 required Bicep inputs before `preprovision` hooks run; the script seeds those
-first-use values, and the hook refreshes update metadata on later provisions.
+first-use values, including the stable subscription code, and the hook refreshes
+update metadata on later provisions. The active subscription display name must
+end in a hyphen-delimited 1-4 digit token, such as `-1`.
 
 ## Deployment profiles
 
@@ -47,9 +60,10 @@ Profiles are cumulative:
 | `minimal` | Resource group, VNet, three subnets and NSGs, private DNS, private Key Vault, private Blob/File Storage endpoints, Log Analytics, and Application Insights | Base private environment |
 | `full` | Everything in `minimal` | Standard Bastion, Windows 11 and Ubuntu jumpboxes, NAT Gateway, Entra VM login, operator RBAC, and VM auto-shutdown schedules |
 
-`minimal` is the default. Re-provisioning an existing minimal environment with
-`full` adds the full-profile resources to the same resource group. Switching
-back to `minimal` can propose deletion of those resources, so always inspect
+`full` is the default. The `full` profile includes Standard Bastion, NAT
+Gateway, public IPs, and two jumpbox VMs; choose `minimal` explicitly for a
+lower-cost, smaller-surface deployment. Re-provisioning a full environment with
+`minimal` can propose deletion of those resources, so always inspect
 `azd provision --preview` before applying a profile change.
 
 Environments deployed by an earlier revision with Azure Monitor private link

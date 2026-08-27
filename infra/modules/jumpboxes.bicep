@@ -1,11 +1,20 @@
 targetScope = 'resourceGroup'
 
 @minLength(1)
-@maxLength(15)
+@maxLength(64)
 param windowsVmName string
+@minLength(1)
+@maxLength(15)
+param windowsComputerName string
+@minLength(1)
+@maxLength(80)
+param windowsNicName string
 @minLength(1)
 @maxLength(64)
 param linuxVmName string
+@minLength(1)
+@maxLength(80)
+param linuxNicName string
 param location string = resourceGroup().location
 param tags object = {}
 param jumpboxSubnetId string
@@ -52,7 +61,7 @@ var virtualMachineUserLoginRoleId = subscriptionResourceId(
   'fb879df8-f326-4884-b1cf-06f3ad86be52'
 )
 resource windowsNic 'Microsoft.Network/networkInterfaces@2024-07-01' = if (deployWindowsVm) {
-  name: 'nic-${windowsVmName}'
+  name: windowsNicName
   location: location
   tags: tags
   properties: {
@@ -72,7 +81,7 @@ resource windowsNic 'Microsoft.Network/networkInterfaces@2024-07-01' = if (deplo
 }
 
 resource linuxNic 'Microsoft.Network/networkInterfaces@2024-07-01' = if (deployLinuxVm) {
-  name: 'nic-${linuxVmName}'
+  name: linuxNicName
   location: location
   tags: tags
   properties: {
@@ -115,7 +124,7 @@ resource windowsVm 'Microsoft.Compute/virtualMachines@2024-11-01' = if (deployWi
       ]
     }
     osProfile: {
-      computerName: windowsVmName
+      computerName: windowsComputerName
       adminUsername: windowsAdminUsername
       adminPassword: windowsAdminPassword
       allowExtensionOperations: true

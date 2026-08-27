@@ -1,13 +1,16 @@
 targetScope = 'resourceGroup'
 
 param name string
+@minLength(2)
+@maxLength(80)
+param publicIpName string
 param location string = resourceGroup().location
 param tags object = {}
 param bastionSubnetId string
 param logAnalyticsWorkspaceId string
 
 resource publicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' = {
-  name: 'pip-${name}'
+  name: publicIpName
   location: location
   tags: tags
   sku: {
