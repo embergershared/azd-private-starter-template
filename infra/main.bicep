@@ -1,5 +1,14 @@
 targetScope = 'subscription'
 
+import {
+  abbreviations
+  locationCodeFor
+  azName
+  globalName
+  shortName
+} from './core/naming.bicep'
+import { commonTags } from './core/tags.bicep'
+
 @description('Short azd environment name used in resource names and tags.')
 @minLength(2)
 @maxLength(32)
@@ -13,17 +22,19 @@ param location string = 'eastus2'
 @maxLength(5)
 param subscriptionCode string
 
-@description('Deployment profile. Minimal excludes VMs, Bastion, NAT, and Entra login; full enables them plus shutdown schedules.')
+@description('Deployment profile. core deploys the resource group, tags and monitoring only. private adds the virtual network, private DNS and private Key Vault and storage. full adds Bastion, jumpbox VMs, NAT Gateway and Entra login. minimal is a deprecated alias for private.')
 @allowed([
-  'minimal'
+  'core'
+  'private'
   'full'
+  'minimal'
 ])
-param deploymentProfile string = 'full'
+param deploymentProfile string = 'core'
 
-@description('Repository identifier applied to common tags.')
+@description('Repository identifier applied to common tags. Seeded from the git remote by the azd preprovision hook.')
 @minLength(1)
 @maxLength(256)
-param repository string = 'azure-azd-private-starter'
+param repository string
 
 @description('Optional owner tag. Avoid personal data; prefer a team or service identifier.')
 @maxLength(256)
@@ -43,32 +54,47 @@ param createdOn string
 @maxLength(25)
 param lastUpdatedOn string
 
+// `minimal` is accepted so environments provisioned before the three-rung
+// ladder keep working. Every downstream decision uses resolvedProfile.
+var resolvedProfile = deploymentProfile == 'minimal' ? 'private' : deploymentProfile
+var isPrivateOrHigher = resolvedProfile != 'core'
+var isFull = resolvedProfile == 'full'
+
+@description('Deploy the virtual network, subnets, NSGs and private DNS. Defaults on for private and full.')
+param enableNetwork bool?
+
+@description('Deploy the Key Vault catalog module. Defaults on for private and full.')
+param enableKeyVault bool?
+
+@description('Deploy the storage account catalog module. Defaults on for private and full.')
+param enableStorage bool?
+
 @description('Deploy Standard Azure Bastion. Defaults on for the full profile.')
-param enableBastion bool = deploymentProfile == 'full'
+param enableBastion bool?
 
 @description('Deploy the Windows 11 Pro jumpbox. Defaults on for the full profile.')
-param enableWindowsVm bool = deploymentProfile == 'full'
+param enableWindowsVm bool?
 
 @description('Deploy the Ubuntu jumpbox. Defaults on for the full profile.')
-param enableLinuxVm bool = deploymentProfile == 'full'
+param enableLinuxVm bool?
 
 @description('Enable outbound internet from the jumpbox subnet through a NAT Gateway. Defaults on for full and must be disabled with Entra login for air-gapped deployments.')
-param enableNatGateway bool = deploymentProfile == 'full'
+param enableNatGateway bool?
 
 @description('Install Microsoft Entra login extensions on jumpbox VMs. Defaults on for full and must match the NAT Gateway setting.')
-param enableEntraLogin bool = deploymentProfile == 'full'
+param enableEntraLogin bool?
 
 @description('Optional MDM application ID passed to AADLoginForWindows. Leave empty for Entra login without automatic MDM enrollment.')
 @maxLength(36)
 param windowsMdmId string = ''
 
 @description('Create VM auto-shutdown schedules. Defaults on for the full profile.')
-param enableShutdownSchedules bool = deploymentProfile == 'full'
+param enableShutdownSchedules bool?
 
 @description('Create configured operator RBAC assignments. Disable when the deployer lacks roleAssignments/write.')
 param enableRoleAssignments bool = true
 
-@description('Base64-encoded JSON object overriding profile feature flags. Supported keys: bastion, windowsVm, linuxVm, natGateway, entraLogin, shutdownSchedules, roleAssignments. natGateway and entraLogin must match.')
+@description('Base64-encoded JSON object overriding profile feature flags. Supported keys: network, keyVault, storage, bastion, windowsVm, linuxVm, natGateway, entraLogin, shutdownSchedules, roleAssignments. natGateway and entraLogin must match.')
 param featureOverridesBase64 string = 'e30='
 
 @description('Comma-separated Entra user or group object IDs that receive VM login and private data-plane roles.')
@@ -131,75 +157,128 @@ param shutdownTime string = '1900'
 @description('Windows time zone ID used by Azure DevTest Lab auto-shutdown schedules.')
 param shutdownTimeZone string = 'Eastern Standard Time'
 
-var abbreviations = loadJsonContent('./abbreviations.json')
-var locationCodes = loadJsonContent('./location-codes.json')
-var locationCode = string(locationCodes[location])
-var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
+var locationCode = locationCodeFor(location)
 var shortUniqueSuffix = take(uniqueString(subscription().id, environmentName, location), 3)
-var baseName = '${locationCode}-${subscriptionCode}-${environmentName}'
-var keyVaultEnvironmentLength = max(
-  1,
-  24 - length('${abbreviations.keyVault}-${locationCode}-${subscriptionCode}--${shortUniqueSuffix}')
+
+var resourceGroupName = azName(abbreviations.resourceGroup, locationCode, subscriptionCode, environmentName, '')
+var vnetName = azName(abbreviations.virtualNetwork, locationCode, subscriptionCode, environmentName, '')
+var bastionNsgName = azName(
+  abbreviations.networkSecurityGroup,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'bastion'
 )
-var storageEnvironmentLength = max(
-  1,
-  24 - length('${abbreviations.storageAccount}${locationCode}${subscriptionCode}${shortUniqueSuffix}')
+var jumpboxNsgName = azName(
+  abbreviations.networkSecurityGroup,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'jumpboxes'
 )
-var resourceGroupName = '${abbreviations.resourceGroup}-${baseName}'
-var vnetName = '${abbreviations.virtualNetwork}-${baseName}'
-var bastionNsgName = '${abbreviations.networkSecurityGroup}-${baseName}-bastion'
-var jumpboxNsgName = '${abbreviations.networkSecurityGroup}-${baseName}-jumpboxes'
-var privateEndpointNsgName = '${abbreviations.networkSecurityGroup}-${baseName}-private-endpoints'
-var jumpboxSubnetName = '${abbreviations.subnet}-${baseName}-jumpboxes'
-var privateEndpointSubnetName = '${abbreviations.subnet}-${baseName}-private-endpoints'
-var keyVaultName = '${abbreviations.keyVault}-${locationCode}-${subscriptionCode}-${take(normalizedEnvironmentName, keyVaultEnvironmentLength)}-${shortUniqueSuffix}'
-var keyVaultPrivateEndpointName = '${abbreviations.privateEndpoint}-${baseName}-kv'
-var keyVaultPrivateEndpointNicName = '${abbreviations.privateEndpointNetworkInterface}-${baseName}-kv'
-var storageAccountName = '${abbreviations.storageAccount}${locationCode}${subscriptionCode}${take(normalizedEnvironmentName, storageEnvironmentLength)}${shortUniqueSuffix}'
-var blobPrivateEndpointName = '${abbreviations.privateEndpoint}-${baseName}-blob'
-var blobPrivateEndpointNicName = '${abbreviations.privateEndpointNetworkInterface}-${baseName}-blob'
-var filePrivateEndpointName = '${abbreviations.privateEndpoint}-${baseName}-file'
-var filePrivateEndpointNicName = '${abbreviations.privateEndpointNetworkInterface}-${baseName}-file'
-var logAnalyticsName = '${abbreviations.logAnalytics}-${baseName}'
-var appInsightsName = '${abbreviations.applicationInsights}-${baseName}'
-var natGatewayName = '${abbreviations.natGateway}-${baseName}'
-var natGatewayPublicIpName = '${abbreviations.publicIp}-${baseName}-nat'
-var bastionName = '${abbreviations.bastion}-${baseName}'
-var bastionPublicIpName = '${abbreviations.publicIp}-${baseName}-bastion'
-var windowsVmName = '${abbreviations.windowsVirtualMachine}-${baseName}'
-var windowsComputerName = 'w-${take(normalizedEnvironmentName, 9)}-${shortUniqueSuffix}'
-var windowsNicName = '${abbreviations.networkInterface}-${baseName}-win'
-var linuxVmName = '${abbreviations.linuxVirtualMachine}-${baseName}'
-var linuxNicName = '${abbreviations.networkInterface}-${baseName}-lin'
-var commonTags = union(
-  {
-    repository: repository
-    'azd-env-name': environmentName
-    environment: environmentName
-    profile: deploymentProfile
-    'managed-by': 'azd'
-    'created-on': createdOn
-    'last-updated-on': lastUpdatedOn
-  },
-  empty(owner)
-    ? {}
-    : {
-        owner: owner
-      },
-  empty(costCenter)
-    ? {}
-    : {
-        'cost-center': costCenter
-      }
+var privateEndpointNsgName = azName(
+  abbreviations.networkSecurityGroup,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'private-endpoints'
 )
+var jumpboxSubnetName = azName(abbreviations.subnet, locationCode, subscriptionCode, environmentName, 'jumpboxes')
+var privateEndpointSubnetName = azName(
+  abbreviations.subnet,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'private-endpoints'
+)
+var keyVaultName = globalName(
+  abbreviations.keyVault,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  shortUniqueSuffix,
+  '-',
+  24
+)
+var keyVaultPrivateEndpointName = azName(
+  abbreviations.privateEndpoint,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'kv'
+)
+var keyVaultPrivateEndpointNicName = azName(
+  abbreviations.privateEndpointNetworkInterface,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'kv'
+)
+var storageAccountName = globalName(
+  abbreviations.storageAccount,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  shortUniqueSuffix,
+  '',
+  24
+)
+var blobPrivateEndpointName = azName(
+  abbreviations.privateEndpoint,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'blob'
+)
+var blobPrivateEndpointNicName = azName(
+  abbreviations.privateEndpointNetworkInterface,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'blob'
+)
+var filePrivateEndpointName = azName(
+  abbreviations.privateEndpoint,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'file'
+)
+var filePrivateEndpointNicName = azName(
+  abbreviations.privateEndpointNetworkInterface,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'file'
+)
+var logAnalyticsName = azName(abbreviations.logAnalytics, locationCode, subscriptionCode, environmentName, '')
+var appInsightsName = azName(abbreviations.applicationInsights, locationCode, subscriptionCode, environmentName, '')
+var natGatewayName = azName(abbreviations.natGateway, locationCode, subscriptionCode, environmentName, '')
+var natGatewayPublicIpName = azName(abbreviations.publicIp, locationCode, subscriptionCode, environmentName, 'nat')
+var bastionName = azName(abbreviations.bastion, locationCode, subscriptionCode, environmentName, '')
+var bastionPublicIpName = azName(abbreviations.publicIp, locationCode, subscriptionCode, environmentName, 'bastion')
+var windowsVmName = azName(abbreviations.windowsVirtualMachine, locationCode, subscriptionCode, environmentName, '')
+var windowsComputerName = shortName('w', environmentName, shortUniqueSuffix, 15)
+var windowsNicName = azName(abbreviations.networkInterface, locationCode, subscriptionCode, environmentName, 'win')
+var linuxVmName = azName(abbreviations.linuxVirtualMachine, locationCode, subscriptionCode, environmentName, '')
+var linuxNicName = azName(abbreviations.networkInterface, locationCode, subscriptionCode, environmentName, 'lin')
+
+var tags = commonTags(repository, environmentName, resolvedProfile, createdOn, lastUpdatedOn, owner, costCenter)
+
+// Profile defaults resolve here rather than in parameter defaults, which may
+// only reference other parameters. An explicitly supplied value always wins,
+// so the ladder sets the baseline and the caller keeps the final say.
 var featureSettings = union(
   {
-    bastion: enableBastion
-    windowsVm: enableWindowsVm
-    linuxVm: enableLinuxVm
-    natGateway: enableNatGateway
-    entraLogin: enableEntraLogin
-    shutdownSchedules: enableShutdownSchedules
+    network: enableNetwork ?? isPrivateOrHigher
+    keyVault: enableKeyVault ?? isPrivateOrHigher
+    storage: enableStorage ?? isPrivateOrHigher
+    bastion: enableBastion ?? isFull
+    windowsVm: enableWindowsVm ?? isFull
+    linuxVm: enableLinuxVm ?? isFull
+    natGateway: enableNatGateway ?? isFull
+    entraLogin: enableEntraLogin ?? isFull
+    shutdownSchedules: enableShutdownSchedules ?? isFull
     roleAssignments: enableRoleAssignments
   },
   json(base64ToString(featureOverridesBase64))
@@ -212,6 +291,14 @@ var deployEntraLogin = bool(featureSettings.entraLogin)
 var deployShutdownSchedules = bool(featureSettings.shutdownSchedules)
 var assignRoles = bool(featureSettings.roleAssignments)
 var deployAnyVm = deployWindowsVm || deployLinuxVm
+
+// scripts/preflight.ps1 rejects inconsistent combinations with an actionable
+// message. These derivations keep a direct `az deployment sub create` that
+// bypasses the azd hooks from producing dangling references.
+var deployNetwork = bool(featureSettings.network) || deployBastion || deployAnyVm
+var deployKeyVault = bool(featureSettings.keyVault) || deployAnyVm
+var deployStorage = bool(featureSettings.storage)
+
 var operatorPrincipalIds = empty(operatorPrincipalIdsCsv)
   ? []
   : map(split(operatorPrincipalIdsCsv, ','), principalId => trim(principalId))
@@ -219,22 +306,36 @@ var operatorPrincipalIds = empty(operatorPrincipalIdsCsv)
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   name: resourceGroupName
   location: location
-  tags: commonTags
+  tags: tags
 }
 
-module natGateway './modules/nat-gateway.bicep' = {
+// #region modules
+module monitoring './modules/monitoring/main.bicep' = {
+  name: 'monitoring'
+  scope: resourceGroup
+  params: {
+    name: logAnalyticsName
+    location: location
+    tags: tags
+    applicationInsightsName: appInsightsName
+    retentionInDays: logRetentionInDays
+    dailyCapGb: logDailyCapGb
+  }
+}
+
+module natGateway './modules/nat-gateway/main.bicep' = if (deployNetwork) {
   name: 'nat-gateway'
   scope: resourceGroup
   params: {
     name: natGatewayName
     publicIpName: natGatewayPublicIpName
     location: location
-    tags: commonTags
+    tags: tags
     enabled: deployNatGateway
   }
 }
 
-module network './modules/network.bicep' = {
+module network './modules/network/main.bicep' = if (deployNetwork) {
   name: 'network'
   scope: resourceGroup
   params: {
@@ -245,41 +346,28 @@ module network './modules/network.bicep' = {
     jumpboxSubnetName: jumpboxSubnetName
     privateEndpointSubnetName: privateEndpointSubnetName
     location: location
-    tags: commonTags
+    tags: tags
     vnetAddressPrefix: vnetAddressPrefix
     bastionSubnetPrefix: bastionSubnetPrefix
     jumpboxSubnetPrefix: jumpboxSubnetPrefix
     privateEndpointSubnetPrefix: privateEndpointSubnetPrefix
     enableNatGateway: deployNatGateway
-    natGatewayId: natGateway.outputs.natGatewayId
+    natGatewayId: deployNetwork ? natGateway!.outputs.natGatewayId : ''
   }
 }
 
-module privateDns './modules/private-dns.bicep' = {
+module privateDns './modules/private-dns/main.bicep' = if (deployNetwork) {
   name: 'private-dns'
   scope: resourceGroup
   params: {
     name: 'private-dns'
     location: 'global'
-    tags: commonTags
-    virtualNetworkId: network.outputs.virtualNetworkId
+    tags: tags
+    virtualNetworkId: deployNetwork ? network!.outputs.virtualNetworkId : ''
   }
 }
 
-module monitoring './modules/monitoring.bicep' = {
-  name: 'monitoring'
-  scope: resourceGroup
-  params: {
-    name: logAnalyticsName
-    location: location
-    tags: commonTags
-    applicationInsightsName: appInsightsName
-    retentionInDays: logRetentionInDays
-    dailyCapGb: logDailyCapGb
-  }
-}
-
-module keyVault './modules/key-vault.bicep' = {
+module keyVault './modules/key-vault/main.bicep' = if (deployKeyVault) {
   name: 'key-vault'
   scope: resourceGroup
   params: {
@@ -287,9 +375,9 @@ module keyVault './modules/key-vault.bicep' = {
     privateEndpointName: keyVaultPrivateEndpointName
     privateEndpointNetworkInterfaceName: keyVaultPrivateEndpointNicName
     location: location
-    tags: commonTags
-    privateEndpointSubnetId: network.outputs.privateEndpointSubnetId
-    privateDnsZoneId: privateDns.outputs.keyVaultZoneId
+    tags: tags
+    privateEndpointSubnetId: deployNetwork ? network!.outputs.privateEndpointSubnetId : ''
+    privateDnsZoneId: deployNetwork ? privateDns!.outputs.keyVaultZoneId : ''
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     enableWindowsVm: deployWindowsVm
     enableLinuxVm: deployLinuxVm
@@ -300,12 +388,7 @@ module keyVault './modules/key-vault.bicep' = {
   }
 }
 
-resource deployedKeyVault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
-  name: keyVaultName
-  scope: resourceGroup
-}
-
-module storage './modules/storage.bicep' = {
+module storage './modules/storage/main.bicep' = if (deployStorage) {
   name: 'storage'
   scope: resourceGroup
   params: {
@@ -315,30 +398,30 @@ module storage './modules/storage.bicep' = {
     filePrivateEndpointName: filePrivateEndpointName
     filePrivateEndpointNetworkInterfaceName: filePrivateEndpointNicName
     location: location
-    tags: commonTags
-    privateEndpointSubnetId: network.outputs.privateEndpointSubnetId
-    blobPrivateDnsZoneId: privateDns.outputs.blobZoneId
-    filePrivateDnsZoneId: privateDns.outputs.fileZoneId
+    tags: tags
+    privateEndpointSubnetId: deployNetwork ? network!.outputs.privateEndpointSubnetId : ''
+    blobPrivateDnsZoneId: deployNetwork ? privateDns!.outputs.blobZoneId : ''
+    filePrivateDnsZoneId: deployNetwork ? privateDns!.outputs.fileZoneId : ''
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     enableRoleAssignments: assignRoles
     operatorPrincipalIds: operatorPrincipalIds
   }
 }
 
-module bastion './modules/bastion.bicep' = if (deployBastion) {
+module bastion './modules/bastion/main.bicep' = if (deployBastion) {
   name: 'bastion'
   scope: resourceGroup
   params: {
     name: bastionName
     publicIpName: bastionPublicIpName
     location: location
-    tags: commonTags
-    bastionSubnetId: network.outputs.bastionSubnetId
+    tags: tags
+    bastionSubnetId: deployNetwork ? network!.outputs.bastionSubnetId : ''
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
-module jumpboxes './modules/jumpboxes.bicep' = if (deployAnyVm) {
+module jumpboxes './modules/jumpboxes/main.bicep' = if (deployAnyVm) {
   name: 'jumpboxes'
   scope: resourceGroup
   params: {
@@ -348,8 +431,8 @@ module jumpboxes './modules/jumpboxes.bicep' = if (deployAnyVm) {
     linuxVmName: linuxVmName
     linuxNicName: linuxNicName
     location: location
-    tags: commonTags
-    jumpboxSubnetId: network.outputs.jumpboxSubnetId
+    tags: tags
+    jumpboxSubnetId: deployNetwork ? network!.outputs.jumpboxSubnetId : ''
     deployWindowsVm: deployWindowsVm
     deployLinuxVm: deployLinuxVm
     windowsVmSize: windowsVmSize
@@ -373,13 +456,20 @@ module jumpboxes './modules/jumpboxes.bicep' = if (deployAnyVm) {
     keyVault
   ]
 }
+// #endregion modules
+
+resource deployedKeyVault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
+  name: keyVaultName
+  scope: resourceGroup
+}
 
 output AZURE_RESOURCE_GROUP string = resourceGroup.name
-output AZURE_VIRTUAL_NETWORK_NAME string = network.outputs.virtualNetworkName
-output AZURE_KEY_VAULT_NAME string = keyVault.outputs.keyVaultName
-output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.storageAccountName
+output AZURE_DEPLOYMENT_PROFILE string = resolvedProfile
+output AZURE_VIRTUAL_NETWORK_NAME string = deployNetwork ? network!.outputs.virtualNetworkName : ''
+output AZURE_KEY_VAULT_NAME string = deployKeyVault ? keyVault!.outputs.name : ''
+output AZURE_STORAGE_ACCOUNT_NAME string = deployStorage ? storage!.outputs.name : ''
 output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.logAnalyticsWorkspaceId
 output AZURE_APPLICATION_INSIGHTS_NAME string = monitoring.outputs.applicationInsightsName
-output AZURE_BASTION_NAME string = deployBastion ? bastion!.outputs.bastionName : ''
+output AZURE_BASTION_NAME string = deployBastion ? bastion!.outputs.name : ''
 output AZURE_WINDOWS_VM_NAME string = deployWindowsVm ? jumpboxes!.outputs.windowsVmName : ''
 output AZURE_LINUX_VM_NAME string = deployLinuxVm ? jumpboxes!.outputs.linuxVmName : ''

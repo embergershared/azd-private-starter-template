@@ -17,12 +17,22 @@ param filePrivateEndpointName string
 @minLength(2)
 @maxLength(80)
 param filePrivateEndpointNetworkInterfaceName string
-param privateEndpointSubnetId string
-param blobPrivateDnsZoneId string
-param filePrivateDnsZoneId string
+@description('Subnet that hosts the private endpoints. Leave empty to deploy public-with-firewall.')
+param privateEndpointSubnetId string = ''
+@description('Private DNS zone resolving the blob endpoint. Leave empty to deploy public-with-firewall.')
+param blobPrivateDnsZoneId string = ''
+@description('Private DNS zone resolving the file endpoint. Leave empty to deploy public-with-firewall.')
+param filePrivateDnsZoneId string = ''
 param logAnalyticsWorkspaceId string
 param enableRoleAssignments bool = true
 param operatorPrincipalIds array = []
+
+// One module body serves every profile. With the private-networking inputs
+// supplied the account is private-only; without them it stays reachable on the
+// public endpoint but the firewall still denies everything by default.
+var useBlobPrivateEndpoint = !empty(privateEndpointSubnetId) && !empty(blobPrivateDnsZoneId)
+var useFilePrivateEndpoint = !empty(privateEndpointSubnetId) && !empty(filePrivateDnsZoneId)
+var usePrivateEndpoints = useBlobPrivateEndpoint || useFilePrivateEndpoint
 
 var blobDataContributorRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -51,7 +61,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
     isLocalUserEnabled: false
     isSftpEnabled: false
     minimumTlsVersion: 'TLS1_2'
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: usePrivateEndpoints ? 'Disabled' : 'Enabled'
     supportsHttpsTrafficOnly: true
     networkAcls: {
       bypass: 'None'
@@ -102,89 +112,37 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01'
   }
 }
 
-resource blobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
-  name: blobPrivateEndpointName
-  location: location
-  tags: tags
-  properties: {
-    customNetworkInterfaceName: blobPrivateEndpointNetworkInterfaceName
-    subnet: {
-      id: privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'blob'
-        properties: {
-          privateLinkServiceId: storageAccount.id
-          groupIds: [
-            'blob'
-          ]
-          privateLinkServiceConnectionState: {
-            status: 'Approved'
-            description: 'Approved by infrastructure deployment.'
-            actionsRequired: 'None'
-          }
-        }
-      }
+module blobPrivateEndpoint '../../core/private-endpoint.bicep' = if (useBlobPrivateEndpoint) {
+  name: '${name}-blob-private-endpoint'
+  params: {
+    name: blobPrivateEndpointName
+    networkInterfaceName: blobPrivateEndpointNetworkInterfaceName
+    location: location
+    tags: tags
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: storageAccount.id
+    groupIds: [
+      'blob'
     ]
+    privateDnsZoneId: blobPrivateDnsZoneId
+    connectionName: 'blob'
   }
 }
 
-resource blobDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
-  parent: blobPrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'blob'
-        properties: {
-          privateDnsZoneId: blobPrivateDnsZoneId
-        }
-      }
+module filePrivateEndpoint '../../core/private-endpoint.bicep' = if (useFilePrivateEndpoint) {
+  name: '${name}-file-private-endpoint'
+  params: {
+    name: filePrivateEndpointName
+    networkInterfaceName: filePrivateEndpointNetworkInterfaceName
+    location: location
+    tags: tags
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: storageAccount.id
+    groupIds: [
+      'file'
     ]
-  }
-}
-
-resource filePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
-  name: filePrivateEndpointName
-  location: location
-  tags: tags
-  properties: {
-    customNetworkInterfaceName: filePrivateEndpointNetworkInterfaceName
-    subnet: {
-      id: privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'file'
-        properties: {
-          privateLinkServiceId: storageAccount.id
-          groupIds: [
-            'file'
-          ]
-          privateLinkServiceConnectionState: {
-            status: 'Approved'
-            description: 'Approved by infrastructure deployment.'
-            actionsRequired: 'None'
-          }
-        }
-      }
-    ]
-  }
-}
-
-resource fileDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
-  parent: filePrivateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'file'
-        properties: {
-          privateDnsZoneId: filePrivateDnsZoneId
-        }
-      }
-    ]
+    privateDnsZoneId: filePrivateDnsZoneId
+    connectionName: 'file'
   }
 }
 
@@ -268,5 +226,11 @@ resource fileRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01
   }
 ]
 
+@description('Resource ID of the storage account.')
+output id string = storageAccount.id
+@description('Name of the storage account.')
+output name string = storageAccount.name
+@description('Deprecated alias of `name`, retained for existing callers.')
 output storageAccountName string = storageAccount.name
+@description('Deprecated alias of `id`, retained for existing callers.')
 output storageAccountId string = storageAccount.id

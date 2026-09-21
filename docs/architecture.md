@@ -4,23 +4,72 @@ The template deploys at subscription scope, creates one environment resource
 group, and invokes resource-group-scoped Bicep modules. Resources use
 deterministic environment/region naming and common ownership and lifecycle tags.
 
+Two layers make that work, and they are deliberately separate:
+
+- **`infra/core/`** — the conventions layer. Naming functions, the common-tag
+  function, the shared private endpoint pattern, and the abbreviation, region
+  and name-rule catalogs. Present in every profile and in every project, whether
+  or not it deploys a network.
+- **`infra/modules/`** — the resource catalog. One self-describing folder per
+  resource, each with a `metadata.json` contract. See
+  [the module catalog](modules.md).
+
+`infra/main.bicep` is the only file that changes per project: it resolves the
+profile, composes names from `infra/core/naming.bicep`, and invokes the modules
+the project has opted into.
+
+## Deployment profiles
+
 ```mermaid
 flowchart TB
-  Internet((Internet)) -->|HTTPS only| Bastion[Standard Bastion]
-  Bastion -->|RDP / SSH| Jump[Private jumpbox subnet]
-  NAT[NAT Gateway<br/>full profile] -->|outbound only| Internet
+  subgraph core["core — always deployed"]
+    RG[Resource group<br/>common tags]
+    Monitor[Log Analytics + App Insights<br/>public ingestion and query]
+  end
+  subgraph private["private — adds private networking"]
+    VNet[VNet, subnets, NSGs]
+    DNS[Private DNS zones]
+    PE[Private endpoint subnet]
+    KV[Private Key Vault]
+    ST[Private Blob and File]
+    PE --> KV
+    PE --> ST
+    DNS --- PE
+    VNet --- PE
+  end
+  subgraph full["full — adds a desktop inside the VNet"]
+    Bastion[Standard Bastion]
+    Jump[Jumpbox subnet<br/>Windows 11 + Ubuntu]
+    NAT[NAT Gateway]
+  end
+  Internet((Internet)) -->|HTTPS only| Bastion
+  Bastion -->|RDP / SSH| Jump
   Jump --> NAT
-  Jump --> PE[Private endpoint subnet]
-  PE --> KV[Private Key Vault]
-  PE --> Storage[Private Blob and File]
-  Monitor[Log Analytics + App Insights<br/>public ingestion and query]
-  DNS[Private DNS zones] --- Jump
-  DNS --- PE
+  NAT -->|outbound only| Internet
+  Jump --> PE
+  DNS --- Jump
+  core --> private --> full
 ```
 
-## Network and profiles
+`core` deploys the resource group, tags and monitoring, and nothing else. It
+creates no virtual network, no private endpoints and no private DNS, and it does
+not force Key Vault or Storage on a project — those are catalog modules a
+project opts into. `core/private-endpoint.bicep` is simply never invoked.
 
-The default `10.42.0.0/22` VNet reserves:
+`private` adds the network, private DNS, and a private Key Vault and Storage
+account. `full` adds both VMs, Bastion, NAT, Entra login extensions, RBAC
+assignments, and shutdown schedules. `minimal` is a deprecated alias for
+`private`. See [configuration](configuration.md) for the feature dependency
+rules.
+
+The profile ladder is proven rather than asserted: `tests/bicep.tests.ps1`
+evaluates the compiled ARM template for each profile and fails if `core` ever
+produces a `Microsoft.Network` or `Microsoft.Compute` resource.
+
+## Network
+
+The `private` and `full` profiles use a default `10.42.0.0/22` VNet, which
+reserves:
 
 | Subnet | Default prefix | Purpose |
 |---|---|---|
@@ -28,17 +77,28 @@ The default `10.42.0.0/22` VNet reserves:
 | `snet-jumpboxes` | `10.42.0.64/26` | Windows and Ubuntu VMs |
 | `snet-private-endpoints` | `10.42.0.128/27` | Key Vault and Storage |
 
-`minimal` creates the network, private Key Vault and Storage, and monitoring.
-`full` additionally creates both VMs, Bastion, NAT, Entra login extensions,
-RBAC assignments, and shutdown schedules. See
-[configuration](configuration.md) for dependencies.
-
 ## Naming contract
 
-Resource names are derived centrally in `infra/main.bicep` from the AZD
-environment, the approved region code in `infra/location-codes.json`, the
-cached subscription code, and `infra/abbreviations.json`. The standard order is
+Resource names are composed by the `@export()`ed functions in
+`infra/core/naming.bicep` from the AZD environment, the approved region code in
+`infra/core/location-codes.json`, the cached subscription code, and
+`infra/core/abbreviations.json`. `infra/main.bicep` imports those functions; it
+does not reimplement them. The standard order is
 `<resource-prefix>-<location-code>-<subscription-code>-<environment>`.
+
+Because Bicep user-defined functions may not call `subscription()`, the caller
+resolves the uniqueness suffix and the location code and passes them in. Every
+name in the template is produced by one of three functions:
+
+| Function | Produces |
+|---|---|
+| `baseName` | The shared `<location-code>-<subscription-code>-<environment>` base |
+| `azName` | A standard hyphenated resource name, optionally with a purpose segment |
+| `globalName` | A globally unique, length-capped name that truncates only the environment segment |
+
+`infra/core/name-rules.json` records the length, charset, case and scope
+constraints of each resource type, and `tests/naming.tests.ps1` asserts every
+rendered name obeys them.
 
 | Resource | Prefix | Constraint handling |
 |---|---|---|
@@ -87,6 +147,11 @@ hostname is independently derived as `w-<compact-environment>-<hash>` so the
 resource name can stay descriptive without violating the 15-character Windows
 computer-name limit.
 
+Names are a stable contract. `tests/naming.tests.ps1` renders the full name set
+from the compiled ARM template and compares it against a recorded baseline, so
+any change that would replace a deployed resource fails the suite rather than
+surfacing in a provision preview.
+
 ## Deliberate public exceptions
 
 - Standard Bastion owns the only default inbound public IP. VM NICs have none,
@@ -102,10 +167,17 @@ endpoints. See [security](security.md).
 
 ## Extension points
 
+- Add a resource by wiring in a catalog module with `./scripts/add-module.ps1`,
+  or author a new one with `./scripts/new-module.ps1`. A module declares its
+  providers, profiles, private endpoints and roles in `metadata.json`, and
+  preflight and the private DNS zone list derive from that declaration.
+- A module that supports Private Link takes `privateEndpointSubnetId` and
+  `privateDnsZoneId`. Leave both empty and it deploys public-with-firewall; set
+  them and it calls `infra/core/private-endpoint.bicep`. One module body
+  therefore serves `core`, `private` and `full` alike. Do not expose service
+  public endpoints as a shortcut in a private profile.
 - Add PoC workload subnets from the unallocated VNet range; give each an NSG and
   explicit egress policy.
-- Add private endpoints and their documented Private DNS zones through the
-  network/DNS modules. Do not expose service public endpoints as a shortcut.
 - Add deployable services to `azure.yaml` only when application source exists.
 - Add module outputs only for downstream composition; never output credentials,
   keys, connection strings, or secret values.
@@ -113,5 +185,6 @@ endpoints. See [security](security.md).
   through `azd`, and add preflight dependency checks and documentation in the
   same change.
 
-Preserve subscription-scope orchestration, modular Bicep, profile behavior, and
-the `azure-prepare → azure-validate → azure-deploy` gates.
+Preserve subscription-scope orchestration, modular Bicep, profile behavior, the
+`infra/core/` conventions layer, and the
+`azure-prepare → azure-validate → azure-deploy` gates.

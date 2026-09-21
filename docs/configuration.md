@@ -6,35 +6,60 @@ generated deployment output.
 
 ## Profiles
 
-| Feature | `minimal` | `full` |
-|---|:---:|:---:|
-| VNet, NSGs, private DNS | ✓ | ✓ |
-| Private Key Vault and Storage | ✓ | ✓ |
-| Log Analytics and App Insights | ✓ | ✓ |
-| Windows and Ubuntu jumpboxes |  | ✓ |
-| Standard Bastion |  | ✓ |
-| NAT and Entra VM login |  | ✓ |
-| VM auto-shutdown |  | ✓ |
+Profiles are a cumulative ladder. Each rung deploys everything below it.
+
+| Feature | `core` | `private` | `full` |
+|---|:---:|:---:|:---:|
+| Resource group and common tags | ✓ | ✓ | ✓ |
+| Log Analytics and App Insights | ✓ | ✓ | ✓ |
+| VNet, NSGs, private DNS |  | ✓ | ✓ |
+| Private Key Vault and Storage |  | ✓ | ✓ |
+| Windows and Ubuntu jumpboxes |  |  | ✓ |
+| Standard Bastion |  |  | ✓ |
+| NAT and Entra VM login |  |  | ✓ |
+| VM auto-shutdown |  |  | ✓ |
 
 ```powershell
-azd env set DEPLOYMENT_PROFILE minimal # or full
+azd env set DEPLOYMENT_PROFILE core # core, private, or full
 ```
+
+`core` is the default. It does not force Key Vault or Storage on a project —
+those are [catalog modules](modules.md) a project opts into, and in `core` they
+deploy public-with-firewall because there is no private endpoint subnet.
+
+`minimal` is accepted as a deprecated alias for `private`. Preflight emits a
+warning and resolves it to `private`; update the environment with
+`azd env set DEPLOYMENT_PROFILE private`.
+
+Moving down the ladder removes resources. Always inspect
+`azd provision --preview` before applying a profile change to a deployed
+environment.
 
 ## Required environment values
 
-| Name | Purpose |
-|---|---|
-| `AZURE_ENV_NAME` | Lowercase 2–32 character environment name; initialized by `azd env new` |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription GUID; its display name must end in a hyphen and 1-4 digits |
-| `AZURE_SUBSCRIPTION_CODE` | Internal cached `s<digits>` code initialized and verified by `set-deployment-tags.ps1` |
-| `AZURE_LOCATION` | Azure region, default design target `eastus2` |
-| `DEPLOYMENT_PROFILE` | `minimal` or `full`; hook defaults to `full` |
-| `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs |
-| `AZURE_FEATURE_OVERRIDES_JSON` | Expert feature object; hook defaults to `{}` |
+| Name | Purpose | Required in |
+|---|---|---|
+| `AZURE_ENV_NAME` | Lowercase 2–32 character environment name; initialized by `azd env new` | all profiles |
+| `AZURE_SUBSCRIPTION_ID` | Target subscription GUID; its display name must end in a hyphen and 1-4 digits | all profiles |
+| `AZURE_SUBSCRIPTION_CODE` | Internal cached `s<digits>` code initialized and verified by `set-deployment-tags.ps1` | all profiles |
+| `AZURE_LOCATION` | Azure region, default design target `eastus2` | all profiles |
+| `DEPLOYMENT_PROFILE` | `core`, `private`, or `full`; hook defaults to `core` | all profiles |
+| `AZURE_REPOSITORY` | Repository name used for the `repository` tag; derived from the git remote by `set-deployment-tags.ps1` | all profiles |
+| `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs | when a VM or role assignments are enabled |
+| `AZURE_FEATURE_OVERRIDES_JSON` | Expert feature object; hook defaults to `{}` | optional |
+
+`AZURE_OPERATOR_PRINCIPAL_IDS` is only required when the deployment grants VM
+sign-in or data-plane roles — that is, the `full` profile or an override that
+enables a VM or `roleAssignments`. A `core` or `private` deployment passes
+preflight without it.
 
 The hook base64-encodes override JSON into the internal
 `AZURE_FEATURE_OVERRIDES_BASE64` transport value so AZD can substitute it into
 ARM parameter JSON without quote corruption. Do not edit the encoded value.
+
+`AZURE_REPOSITORY` is derived from the `origin` git remote, falling back to the
+repository folder name. Set it explicitly when the tag should not match either —
+for example when the same infrastructure is maintained in a fork.
 
 The environment helper derives `AZURE_SUBSCRIPTION_CODE` from the active
 subscription display name, seeds it with `AZURE_CREATED_ON`, and verifies it on
@@ -59,14 +84,45 @@ AZD resolves required Bicep inputs before it invokes `preprovision`, so the
 first preview cannot rely on the hook to create them. Later provisions invoke
 the same script automatically and preserve `AZURE_CREATED_ON`.
 
+## Preflight validation
+
+`scripts/preflight.ps1` runs automatically as the `preprovision` hook and fails
+closed. It is tiered so a `core` deployment is not blocked by checks that do not
+apply to it.
+
+Core checks always run:
+
+- `AZURE_ENV_NAME` format
+- subscription GUID format, and that the subscription exists and is enabled
+- `AZURE_SUBSCRIPTION_CODE` derivation and stability
+- the location is a recognized Azure region and is present in the location-code
+  catalog
+
+Conditional checks run only when the relevant feature is enabled:
+
+| Check | Runs when |
+|---|---|
+| Resource provider registration | derived from the `providers` declared by the modules the profile enables |
+| VM SKU availability, Windows image URN, vCPU quota | a jumpbox VM is enabled |
+| Operator principal IDs present and well-formed | a VM or `roleAssignments` is enabled |
+| Feature dependency rules | an expert override is set |
+
+A `core` deployment therefore performs no `Microsoft.Network` or
+`Microsoft.Compute` calls at all.
+
 ## Expert feature overrides
 
-Supported Boolean keys are `bastion`, `windowsVm`, `linuxVm`, `natGateway`,
-`entraLogin`, `shutdownSchedules`, and `roleAssignments`.
+Supported Boolean keys are `network`, `keyVault`, `storage`, `bastion`,
+`windowsVm`, `linuxVm`, `natGateway`, `entraLogin`, `shutdownSchedules`, and
+`roleAssignments`.
 
 ```powershell
-azd env set AZURE_FEATURE_OVERRIDES_JSON '{"bastion":true,"windowsVm":true,"linuxVm":false,"natGateway":true,"entraLogin":true,"shutdownSchedules":true,"roleAssignments":true}'
+azd env set AZURE_FEATURE_OVERRIDES_JSON '{"keyVault":true,"storage":true}'
 ```
+
+An override composes on top of the selected profile, so the example above adds a
+public-with-firewall Key Vault and Storage account to a `core` deployment
+without creating a network.
 
 Dependency rules fail preflight:
 
@@ -74,6 +130,8 @@ Dependency rules fail preflight:
 - `natGateway` and `entraLogin` must have identical values.
 - Any enabled jumpbox VM requires Bastion because the template has no VPN,
   peering, or VM public-IP access path.
+- Enabling Bastion or a VM implies the network: the template derives
+  `deployNetwork` from them, so you never have to enable `network` by hand.
 - Full-profile Entra extension installation and authentication require NAT
   egress. Do not disable NAT alone.
 - An expert air-gapped deployment **must** set both to false:
@@ -112,13 +170,13 @@ provider only when that enrollment is intentional; Microsoft Intune uses
 
 The template enforces the
 `<resource-prefix>-<location-code>-<subscription-code>-<environment>` order and
-resource-specific length/character constraints in `infra/main.bicep`; see the
-[architecture naming contract](architecture.md#naming-contract). Do not encode
-custom resource names in AZD environment values. Changing a prefix or suffix
-replaces resources whose Azure names are immutable, so review the preview for
-data migration, retained resources, downtime, and additional cost before
+resource-specific length/character constraints in `infra/core/naming.bicep`; see
+the [architecture naming contract](architecture.md#naming-contract). Do not
+encode custom resource names in AZD environment values. Changing a prefix or
+suffix replaces resources whose Azure names are immutable, so review the preview
+for data migration, retained resources, downtime, and additional cost before
 provisioning an existing environment.
 
-`infra/location-codes.json` is the shared public-cloud location catalog used by
-Bicep and preflight. An Azure location that is valid but not yet mapped fails
-closed until the catalog receives a reviewed, unique country-first code.
+`infra/core/location-codes.json` is the shared public-cloud location catalog
+used by Bicep and preflight. An Azure location that is valid but not yet mapped
+fails closed until the catalog receives a reviewed, unique country-first code.

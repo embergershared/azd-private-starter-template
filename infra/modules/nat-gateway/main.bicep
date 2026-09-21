@@ -40,4 +40,9 @@ resource natGateway 'Microsoft.Network/natGateways@2024-07-01' = if (enabled) {
   }
 }
 
+@description('Resource ID of the NAT Gateway, or an empty string when disabled.')
+output id string = enabled ? natGateway!.id : ''
+@description('Name of the NAT Gateway, or an empty string when disabled.')
+output name string = enabled ? natGateway!.name : ''
+@description('Deprecated alias of `id`, retained for existing callers.')
 output natGatewayId string = enabled ? natGateway!.id : ''

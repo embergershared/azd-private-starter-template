@@ -39,19 +39,39 @@ foreach ($command in @('az', 'azd')) {
     }
 }
 
-$subscriptionId = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_ID'
-$location = Get-RequiredEnvironmentValue -Name 'AZURE_LOCATION'
-$environmentName = Get-RequiredEnvironmentValue -Name 'AZURE_ENV_NAME'
-$cachedSubscriptionCode = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_CODE'
-$profile = (& azd env get-value DEPLOYMENT_PROFILE 2>$null)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($profile)) {
-    $profile = 'full'
-}
-$profile = $profile.Trim()
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
-if ($profile -notin @('minimal', 'full')) {
-    throw "DEPLOYMENT_PROFILE must be 'minimal' or 'full'; received '$profile'."
+# ---------------------------------------------------------------------------
+# Profile resolution
+# ---------------------------------------------------------------------------
+
+$knownProfiles = @('core', 'private', 'full')
+
+$deploymentProfile = (& azd env get-value DEPLOYMENT_PROFILE 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($deploymentProfile)) {
+    $deploymentProfile = 'core'
 }
+$deploymentProfile = $deploymentProfile.Trim()
+
+# 'minimal' was the pre-0.2.0 name for 'private'. It is still accepted so an
+# environment provisioned before the three-rung ladder keeps deploying, but it
+# is reported so the value can be migrated.
+$resolvedProfile = $deploymentProfile
+if ($deploymentProfile -eq 'minimal') {
+    $resolvedProfile = 'private'
+    Write-Warning "DEPLOYMENT_PROFILE 'minimal' is deprecated and now maps to 'private'. Run: azd env set DEPLOYMENT_PROFILE private"
+}
+
+if ($resolvedProfile -notin $knownProfiles) {
+    throw "DEPLOYMENT_PROFILE must be one of: $($knownProfiles -join ', '); received '$deploymentProfile'."
+}
+
+$isPrivateOrHigher = $resolvedProfile -ne 'core'
+$isFull = $resolvedProfile -eq 'full'
+
+# ---------------------------------------------------------------------------
+# Feature resolution - mirrors the featureSettings block of infra/main.bicep
+# ---------------------------------------------------------------------------
 
 $featureOverridesJson = Get-RequiredEnvironmentValue -Name 'AZURE_FEATURE_OVERRIDES_JSON'
 try {
@@ -64,49 +84,107 @@ if ($featureOverrides -isnot [System.Collections.IDictionary]) {
     throw 'AZURE_FEATURE_OVERRIDES_JSON must be a JSON object.'
 }
 
-$supportedFeatures = @(
-    'bastion',
-    'entraLogin',
-    'linuxVm',
-    'natGateway',
-    'roleAssignments',
-    'shutdownSchedules',
-    'windowsVm'
-)
+$featureSettings = [ordered] @{
+    network           = $isPrivateOrHigher
+    keyVault          = $isPrivateOrHigher
+    storage           = $isPrivateOrHigher
+    bastion           = $isFull
+    windowsVm         = $isFull
+    linuxVm           = $isFull
+    natGateway        = $isFull
+    entraLogin        = $isFull
+    shutdownSchedules = $isFull
+    roleAssignments   = $true
+}
+
+$supportedFeatures = @($featureSettings.Keys)
 foreach ($feature in $featureOverrides.Keys) {
     if ($feature -cnotin $supportedFeatures) {
-        throw "Unsupported feature override '$feature'."
+        throw "Unsupported feature override '$feature'. Supported keys: $($supportedFeatures -join ', ')."
     }
     if ($featureOverrides[$feature] -isnot [bool]) {
         throw "Feature override '$feature' must be true or false."
     }
-}
-
-$featureSettings = @{
-    bastion = $profile -eq 'full'
-    entraLogin = $profile -eq 'full'
-    linuxVm = $profile -eq 'full'
-    natGateway = $profile -eq 'full'
-    roleAssignments = $true
-    shutdownSchedules = $profile -eq 'full'
-    windowsVm = $profile -eq 'full'
-}
-foreach ($feature in $featureOverrides.Keys) {
     $featureSettings[$feature] = $featureOverrides[$feature]
 }
 
-if ($featureSettings.shutdownSchedules -and -not ($featureSettings.windowsVm -or $featureSettings.linuxVm)) {
+$anyVm = $featureSettings.windowsVm -or $featureSettings.linuxVm
+
+if ($featureSettings.shutdownSchedules -and -not $anyVm) {
     throw 'shutdownSchedules requires at least one jumpbox VM.'
 }
-if ($featureSettings.entraLogin -and -not ($featureSettings.windowsVm -or $featureSettings.linuxVm)) {
+if ($featureSettings.entraLogin -and -not $anyVm) {
     throw 'entraLogin requires at least one jumpbox VM.'
 }
 if ($featureSettings.entraLogin -ne $featureSettings.natGateway) {
     throw 'natGateway and entraLogin must be enabled or disabled together; air-gapped deployments set both to false.'
 }
-if (($featureSettings.windowsVm -or $featureSettings.linuxVm) -and -not $featureSettings.bastion) {
+if ($anyVm -and -not $featureSettings.bastion) {
     throw 'Jumpbox VMs require Bastion because this template configures no alternate private access path.'
 }
+
+# The same defensive derivations infra/main.bicep applies, so preflight and the
+# template agree on what is actually deployed.
+$deployNetwork = $featureSettings.network -or $featureSettings.bastion -or $anyVm
+$deployKeyVault = $featureSettings.keyVault -or $anyVm
+$deployStorage = [bool] $featureSettings.storage
+
+# ---------------------------------------------------------------------------
+# Catalog-driven module enablement
+# ---------------------------------------------------------------------------
+
+$catalogPath = Join-Path $repoRoot 'infra/modules/catalog.json'
+if (-not (Test-Path -LiteralPath $catalogPath)) {
+    throw "Module catalog '$catalogPath' is missing. Run ./scripts/build-catalog.ps1."
+}
+$catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json -AsHashtable
+
+# Maps a catalog module to whether this deployment will actually deploy it.
+# Anything not listed here falls back to its declared feature flag.
+$moduleEnabled = @{
+    'monitoring'  = $true
+    'network'     = $deployNetwork
+    'private-dns' = $deployNetwork
+    'key-vault'   = $deployKeyVault
+    'storage'     = $deployStorage
+    'bastion'     = [bool] $featureSettings.bastion
+    'nat-gateway' = [bool] $featureSettings.natGateway
+    'jumpboxes'   = $anyVm
+}
+
+$enabledModules = @()
+foreach ($module in $catalog.modules) {
+    $name = [string] $module['name']
+
+    if ($moduleEnabled.ContainsKey($name)) {
+        $enabled = [bool] $moduleEnabled[$name]
+    }
+    elseif ($null -ne $module['featureFlag'] -and $featureSettings.Contains([string] $module['featureFlag'])) {
+        $enabled = [bool] $featureSettings[[string] $module['featureFlag']]
+    }
+    else {
+        throw "Catalog module '$name' declares feature flag '$($module['featureFlag'])', which is not a known feature. Wire it into scripts/preflight.ps1."
+    }
+
+    if (-not $enabled) {
+        continue
+    }
+
+    if ($module['profiles'] -notcontains $resolvedProfile) {
+        Write-Warning "Module '$name' is enabled by an override but is not part of the '$resolvedProfile' profile."
+    }
+
+    $enabledModules += , $module
+}
+
+# ---------------------------------------------------------------------------
+# Core checks - these run for every profile, including core
+# ---------------------------------------------------------------------------
+
+$subscriptionId = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_ID'
+$location = Get-RequiredEnvironmentValue -Name 'AZURE_LOCATION'
+$environmentName = Get-RequiredEnvironmentValue -Name 'AZURE_ENV_NAME'
+$cachedSubscriptionCode = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_CODE'
 
 if ($environmentName -cnotmatch '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])$') {
     throw 'AZURE_ENV_NAME must contain 2-32 lowercase alphanumeric or hyphen characters and must start and end with an alphanumeric character.'
@@ -133,25 +211,26 @@ $locations = Invoke-AzJson -Arguments @('account', 'list-locations', '--query', 
 if ($locations.Count -eq 0) {
     throw "Azure location '$location' is not recognized."
 }
-$locationCatalogPath = Join-Path $PSScriptRoot '..\infra\location-codes.json'
+$locationCatalogPath = Join-Path $repoRoot 'infra/core/location-codes.json'
 $locationCode = Get-LocationCode -Location $location -CatalogPath $locationCatalogPath
 
-$providers = @(
-    'Microsoft.Authorization',
-    'Microsoft.Insights',
-    'Microsoft.KeyVault',
-    'Microsoft.Network',
-    'Microsoft.OperationalInsights',
-    'Microsoft.Storage'
-)
-if ($featureSettings.windowsVm -or $featureSettings.linuxVm) {
-    $providers += 'Microsoft.Compute'
+# ---------------------------------------------------------------------------
+# Provider registration - derived from the modules actually enabled
+# ---------------------------------------------------------------------------
+
+$providers = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($module in $enabledModules) {
+    foreach ($provider in $module['providers']) {
+        $null = $providers.Add([string] $provider)
+    }
 }
-if (
-    $featureSettings.shutdownSchedules -and
-    ($featureSettings.windowsVm -or $featureSettings.linuxVm)
-) {
-    $providers += 'Microsoft.DevTestLab'
+if ($featureSettings.roleAssignments) {
+    $null = $providers.Add('Microsoft.Authorization')
+}
+if (-not $featureSettings.shutdownSchedules) {
+    # The jumpboxes module declares Microsoft.DevTestLab because that is the
+    # provider behind auto-shutdown schedules. Without schedules it is not used.
+    $null = $providers.Remove('Microsoft.DevTestLab')
 }
 
 $unregisteredProviders = foreach ($provider in $providers) {
@@ -165,9 +244,16 @@ $unregisteredProviders = foreach ($provider in $providers) {
     }
 }
 
-if ($unregisteredProviders.Count -gt 0) {
+if (@($unregisteredProviders).Count -gt 0) {
     throw "Register these Azure providers before provisioning: $($unregisteredProviders -join ', ')."
 }
+
+# ---------------------------------------------------------------------------
+# Operator principals - only demanded when an enabled module needs them
+# ---------------------------------------------------------------------------
+
+$requiresOperatorPrincipals = $featureSettings.roleAssignments -and
+    @($enabledModules | Where-Object { $_['preflight']['requiresOperatorPrincipals'] }).Count -gt 0
 
 $operatorPrincipalIdsCsv = (& azd env get-value AZURE_OPERATOR_PRINCIPAL_IDS 2>$null)
 $operatorPrincipalIds = if (
@@ -180,9 +266,11 @@ else {
     @($operatorPrincipalIdsCsv.Split(',', [StringSplitOptions]::RemoveEmptyEntries) |
         ForEach-Object { $_.Trim() })
 }
-if ($featureSettings.roleAssignments -and $operatorPrincipalIds.Count -eq 0) {
-    throw 'At least one Entra operator principal ID is required when role assignments are enabled.'
+
+if ($requiresOperatorPrincipals -and $operatorPrincipalIds.Count -eq 0) {
+    throw 'At least one Entra operator principal ID is required when a jumpbox is deployed with role assignments enabled. Set AZURE_OPERATOR_PRINCIPAL_IDS or disable the roleAssignments feature.'
 }
+
 $seenPrincipalIds = [System.Collections.Generic.HashSet[Guid]]::new()
 foreach ($principalId in $operatorPrincipalIds) {
     $parsedPrincipalId = [Guid]::Empty
@@ -198,7 +286,18 @@ foreach ($principalId in $operatorPrincipalIds) {
     }
 }
 
-if ($featureSettings.windowsVm -or $featureSettings.linuxVm) {
+# ---------------------------------------------------------------------------
+# Compute checks - skipped entirely unless a jumpbox is deployed
+# ---------------------------------------------------------------------------
+
+$requestedChecks = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($module in $enabledModules) {
+    foreach ($check in $module['preflight']['checks']) {
+        $null = $requestedChecks.Add([string] $check)
+    }
+}
+
+if ($requestedChecks.Contains('vmSkuAvailability')) {
     $vmSizes = @()
     if ($featureSettings.windowsVm) {
         $vmSizes += 'Standard_D4s_v5'
@@ -216,24 +315,33 @@ if ($featureSettings.windowsVm -or $featureSettings.linuxVm) {
             '--query', "[?name=='$vmSize']"
         )
 
+        if ($sku.Count -eq 0) {
+            throw "VM size '$vmSize' is unavailable or restricted in '$location'."
+        }
+
         $locationRestrictionCount = @(
             $sku[0].restrictions |
                 Where-Object { $null -ne $_ -and $_.type -eq 'Location' }
         ).Count
-        if ($sku.Count -eq 0 -or $locationRestrictionCount -gt 0) {
+        if ($locationRestrictionCount -gt 0) {
             throw "VM size '$vmSize' is unavailable or restricted in '$location'."
         }
     }
+}
 
-    if ($featureSettings.windowsVm) {
-        $windowsUrn = 'MicrosoftWindowsDesktop:windows-11:win11-24h2-pro:latest'
-        $null = Invoke-AzJson -Arguments @(
-            'vm', 'image', 'show',
-            '--subscription', $subscriptionId,
-            '--location', $location,
-            '--urn', $windowsUrn
-        )
-    }
+if ($requestedChecks.Contains('windowsImage') -and $featureSettings.windowsVm) {
+    $windowsUrn = 'MicrosoftWindowsDesktop:windows-11:win11-24h2-pro:latest'
+    $null = Invoke-AzJson -Arguments @(
+        'vm', 'image', 'show',
+        '--subscription', $subscriptionId,
+        '--location', $location,
+        '--urn', $windowsUrn
+    )
+}
+
+if ($requestedChecks.Contains('vcpuQuota')) {
+    $requiredVcpus = $(if ($featureSettings.windowsVm) { 4 } else { 0 }) +
+        $(if ($featureSettings.linuxVm) { 2 } else { 0 })
 
     $regionalUsage = Invoke-AzJson -Arguments @(
         'vm', 'list-usage',
@@ -243,12 +351,13 @@ if ($featureSettings.windowsVm -or $featureSettings.linuxVm) {
     )
 
     foreach ($usage in $regionalUsage) {
-        $requiredVcpus = $(if ($featureSettings.windowsVm) { 4 } else { 0 }) +
-            $(if ($featureSettings.linuxVm) { 2 } else { 0 })
         if (($usage.limit - $usage.currentValue) -lt $requiredVcpus) {
             throw "Insufficient '$($usage.localName)' quota in '$location': $requiredVcpus vCPUs are required."
         }
     }
 }
 
-Write-Output "Preflight passed for environment '$environmentName' using profile '$profile' in '$location' ($locationCode) and subscription code '$cachedSubscriptionCode'."
+$moduleList = ($enabledModules | ForEach-Object { $_['name'] }) -join ', '
+Write-Output "Preflight passed for environment '$environmentName' using profile '$resolvedProfile' in '$location' ($locationCode) and subscription code '$cachedSubscriptionCode'."
+Write-Output "Modules: $moduleList"
+Write-Output "Providers verified: $($providers -join ', ')"
