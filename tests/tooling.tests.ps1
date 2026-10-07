@@ -269,3 +269,34 @@ Test-Case 'compiled template fails nonzero compilation and preserves diagnostics
     Assert-Match -Actual $message -Pattern 'compiler fixture failure' -Message 'Failure diagnostics must be preserved.'
     Assert-Equal -Actual $script:CompiledTemplates.Count -Expected 0 -Message 'Failed compilation must not be cached.'
 }
+
+foreach ($scenario in @('expected-native-failure', 'assertion-failure', 'load-failure')) {
+    Test-Case "runner reports the correct process exit for $scenario" {
+        $root = Join-Path (Get-RepoRoot) ('.runner-fixture-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root | Out-Null
+        try {
+            foreach ($file in @('run-tests.ps1', 'assert.ps1')) {
+                Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $root
+            }
+            $body = switch ($scenario) {
+                'expected-native-failure' { "Test-Case 'expected native failure' { & pwsh -NoProfile -Command 'exit 7'; Assert-True -Condition (`$LASTEXITCODE -eq 7) -Message 'Expected exit 7.' }" }
+                'assertion-failure' { "Test-Case 'failed assertion' { Assert-True -Condition `$false -Message 'Intentional assertion failure.' }" }
+                'load-failure' { "throw 'Intentional file load failure.'" }
+            }
+            Set-Content -LiteralPath (Join-Path $root 'fixture.tests.ps1') -Value $body
+            $runner = (Join-Path $root 'run-tests.ps1').Replace("'", "''")
+            $command = "`$ErrorActionPreference = 'Stop'; & '$runner'; if (Test-Path variable:\LASTEXITCODE) { exit `$LASTEXITCODE }"
+            $output = & pwsh -NoProfile -Command $command 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+            if ($scenario -eq 'expected-native-failure') {
+                Assert-Equal -Actual $exitCode -Expected 0 -Message 'A passing suite must exit successfully despite an expected native failure.'
+                Assert-Match -Actual $output -Pattern '1 passed, 0 failed' -Message 'The fixture must execute its regression.'
+            }
+            else {
+                Assert-True -Condition ($exitCode -ne 0) -Message 'Real assertion and file-load failures must fail CI.'
+                Assert-Match -Actual $output -Pattern '0 passed, 1 failed' -Message 'The fixture failure must be counted.'
+            }
+        }
+        finally { Remove-Item -LiteralPath $root -Recurse -Force }
+    }
+}

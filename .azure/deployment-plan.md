@@ -146,3 +146,14 @@ Before a future deployment, all Azure validation checks must pass:
 
 Aspire and Docker checks do not apply to this infrastructure-only template.
 No Azure validation step is waived by a passing PR or an offline test result.
+
+### PR CI process-exit correction
+
+PR #1's first Ubuntu run executed all 56 tests successfully but failed the job:
+the intentional compiler-failure test left a nonzero native exit code for the
+PowerShell Actions wrapper. The runner now reports zero only after confirming
+no assertion or file-load failures. Three subprocess regressions cover successful
+expected failures, real assertion failures and file-load failures using the CI
+wrapper contract. The targeted tooling suite passed 23 tests locally; independent
+review found no significant issues in this correction. The next CI run must pass
+the entire 59-test suite and remaining workflow checks before merge.

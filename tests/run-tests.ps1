@@ -69,3 +69,6 @@ Write-Output "$passed passed, $failed failed."
 if ($failed -gt 0) {
     throw "$failed test case(s) failed."
 }
+
+# Expected native-command failures in regression tests must not leak into CI's exit code.
+$global:LASTEXITCODE = 0
