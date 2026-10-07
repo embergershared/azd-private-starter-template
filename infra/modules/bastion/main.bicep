@@ -71,4 +71,9 @@ resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
   }
 }
 
+@description('Resource ID of the Bastion host.')
+output id string = bastion.id
+@description('Name of the Bastion host.')
+output name string = bastion.name
+@description('Deprecated alias of `name`, retained for existing callers.')
 output bastionName string = bastion.name

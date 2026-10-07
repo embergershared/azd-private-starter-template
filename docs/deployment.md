@@ -3,6 +3,10 @@
 Use three gated phases. The template is infrastructure-only, so `azd provision`
 is the deployment operation; `azd deploy` has no application service to publish.
 
+Requirements scale with the [deployment profile](configuration.md#profiles). A
+`core` deployment needs far less than a `full` one, and the sections below mark
+which requirements are conditional.
+
 ## Prerequisites and roles
 
 Install current [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
@@ -14,12 +18,13 @@ availability immediately before preview.
 The deployment identity needs:
 
 - **Contributor** at subscription scope (or equivalent custom permissions) to
-  create the resource group and resources.
+  create the resource group and resources. Required in every profile.
 - **Role Based Access Control Administrator**, **User Access Administrator**, or
   equivalent `Microsoft.Authorization/roleAssignments/*` permission at the
   deployment scopes when `roleAssignments` is enabled.
 - Read access to subscription, provider, quota, SKU, and Marketplace image
-  metadata used by preflight.
+  metadata used by preflight. Preflight only queries the providers the enabled
+  modules declare, so a `core` deployment makes no compute or network calls.
 
   The target subscription display name must end in a hyphen-delimited 1-4 digit
   token. The initialization helper caches that token as `s<digits>` for resource
@@ -32,11 +37,17 @@ Configured operator principals receive:
 - **Storage Blob Data Contributor** and **Storage File Data SMB Share
   Contributor** on the Storage account.
 
+`AZURE_OPERATOR_PRINCIPAL_IDS` is therefore only required when the deployment
+enables a VM or role assignments. A `core` deployment passes preflight without
+it.
+
 Role changes can take time to propagate. Use Entra object IDs, not display names.
 If automatic assignments are disabled, have an authorized administrator apply
 the same least-privilege roles before access testing. Review the authoritative
 [Azure built-in role definitions](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles)
 when permissions or role IDs change.
+
+### Jumpbox requirements (`full` profile only)
 
 Windows 11 Pro is license-gated. Preflight queries the exact
 `MicrosoftWindowsDesktop:windows-11:win11-24h2-pro:latest` offer in the target
@@ -76,7 +87,8 @@ azd auth login
 azd env new <environment>
 azd env set AZURE_SUBSCRIPTION_ID <subscription-guid>
 azd env set AZURE_LOCATION eastus2
-azd env set DEPLOYMENT_PROFILE minimal
+azd env set DEPLOYMENT_PROFILE core
+# Only when the profile or an override enables a VM or role assignments:
 azd env set AZURE_OPERATOR_PRINCIPAL_IDS <entra-object-guid>
 .\scripts\set-deployment-tags.ps1
 ```
@@ -88,16 +100,19 @@ verify the code and refresh update metadata automatically.
 
 ## 2. Validate
 
-Run local parsing and Bicep validation, then preview. The pre-provision hook
-checks configuration dependencies, provider registration, target location,
-operator IDs, VM SKU quota/restrictions, and Windows image visibility.
+Run the test suite, then preview. The suite covers naming equivalence and
+name-rule compliance, module catalog conformance, `az bicep build` and
+`az bicep lint` over `infra/main.bicep` and every catalog module, and the
+`core`/`private`/`full` profile matrix. The pre-provision hook then checks
+configuration dependencies, provider registration for the modules actually
+enabled, target location, and — only when the relevant feature is on — operator
+IDs, VM SKU quota/restrictions, and Windows image visibility.
 
 ```powershell
 Get-ChildItem -Recurse -Filter *.json |
   ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null }
-.\scripts\test-naming.ps1
-az bicep build --file infra\main.bicep
-az bicep lint --file infra\main.bicep
+.\scripts\build-catalog.ps1 -Check
+.\tests\run-tests.ps1
 azd provision --preview -e <environment>
 ```
 
@@ -131,7 +146,7 @@ Verify actual resource state, private DNS resolution, public-access settings,
 operator RBAC, Entra login, current break-glass retrieval, monitoring ingestion,
 and every enabled profile feature. A successful command alone is insufficient.
 
-## Standard Bastion access
+## Standard Bastion access (`full` profile only)
 
 VMs have no public IP. From the Azure portal, open the VM, select
 **Connect → Bastion**, and use Entra credentials where supported. Standard
@@ -147,10 +162,14 @@ Do not add VM public IPs or internet RDP/SSH rules for convenience.
 
 ## Cost, shutdown, and teardown
 
-Check current regional prices before approval. The largest idle charges usually
-come from Standard Bastion, VMs/disks, NAT Gateway and public IPs, private
-endpoints, and Log Analytics ingestion. The daily cap limits ingestion,
-not all monitoring charges.
+Check current regional prices before approval. A `core` deployment's only
+recurring charge is Log Analytics ingestion and retention. The largest idle
+charges in the higher profiles usually come from Standard Bastion, VMs/disks,
+NAT Gateway and public IPs, and private endpoints. The daily cap limits
+ingestion, not all monitoring charges.
+
+Choosing the lowest profile that satisfies the project is the primary cost
+control. `core` is the default for that reason.
 
 Full-profile shutdown schedules stop VM compute daily at `1900` Eastern by
 default. They do not remove disk, Bastion, NAT, public IP, private endpoint, or

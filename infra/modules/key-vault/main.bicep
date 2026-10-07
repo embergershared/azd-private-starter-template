@@ -11,8 +11,10 @@ param privateEndpointName string
 @minLength(2)
 @maxLength(80)
 param privateEndpointNetworkInterfaceName string
-param privateEndpointSubnetId string
-param privateDnsZoneId string
+@description('Subnet that hosts the private endpoint. Leave empty to deploy public-with-firewall.')
+param privateEndpointSubnetId string = ''
+@description('Private DNS zone that resolves the private endpoint. Leave empty to deploy public-with-firewall.')
+param privateDnsZoneId string = ''
 param logAnalyticsWorkspaceId string
 param enableWindowsVm bool = false
 param enableLinuxVm bool = false
@@ -29,6 +31,11 @@ var keyVaultSecretsUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '4633458b-17de-408a-b874-0445c86b69e6'
 )
+
+// One module body serves every profile. With both private-networking inputs
+// supplied the vault is private-only; without them it stays reachable on the
+// public endpoint but the firewall still denies everything by default.
+var usePrivateEndpoint = !empty(privateEndpointSubnetId) && !empty(privateDnsZoneId)
 
 resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   name: name
@@ -48,7 +55,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enabledForDeployment: false
     enabledForDiskEncryption: false
     enabledForTemplateDeployment: true
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: usePrivateEndpoint ? 'Disabled' : 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
@@ -94,46 +101,20 @@ resource linuxPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = if
   }
 }
 
-resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
-  name: privateEndpointName
-  location: location
-  tags: tags
-  properties: {
-    customNetworkInterfaceName: privateEndpointNetworkInterfaceName
-    subnet: {
-      id: privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: 'key-vault'
-        properties: {
-          privateLinkServiceId: keyVault.id
-          groupIds: [
-            'vault'
-          ]
-          privateLinkServiceConnectionState: {
-            status: 'Approved'
-            description: 'Approved by infrastructure deployment.'
-            actionsRequired: 'None'
-          }
-        }
-      }
+module privateEndpoint '../../core/private-endpoint.bicep' = if (usePrivateEndpoint) {
+  name: '${name}-private-endpoint'
+  params: {
+    name: privateEndpointName
+    networkInterfaceName: privateEndpointNetworkInterfaceName
+    location: location
+    tags: tags
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: keyVault.id
+    groupIds: [
+      'vault'
     ]
-  }
-}
-
-resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
-  parent: privateEndpoint
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'key-vault'
-        properties: {
-          privateDnsZoneId: privateDnsZoneId
-        }
-      }
-    ]
+    privateDnsZoneId: privateDnsZoneId
+    connectionName: 'key-vault'
   }
 }
 
@@ -173,5 +154,11 @@ resource secretReaderAssignments 'Microsoft.Authorization/roleAssignments@2022-0
   }
 ]
 
+@description('Resource ID of the Key Vault.')
+output id string = keyVault.id
+@description('Name of the Key Vault.')
+output name string = keyVault.name
+@description('Deprecated alias of `name`, retained for existing callers.')
 output keyVaultName string = keyVault.name
+@description('Deprecated alias of `id`, retained for existing callers.')
 output keyVaultId string = keyVault.id

@@ -19,4 +19,8 @@ infra/*.jsonc
 # AZD local state and generated artifacts
 .azure/**
 .azure/.gitignore
-.azure/deployment-plan.md
+!.azure/deployment-plan.md
+
+# Compiled ARM output. azd and az compile infra/main.bicep directly, so a
+# committed copy has no consumer and silently goes stale.
+infra/main.json

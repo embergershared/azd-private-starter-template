@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 function Invoke-Azd {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string[]] $Arguments
     )
 
@@ -36,6 +37,23 @@ foreach ($command in @('az', 'azd')) {
 }
 
 . (Join-Path $PSScriptRoot 'naming.ps1')
+
+# The deployment profile decides which of the values below are even relevant.
+# 'minimal' is the pre-0.2.0 name for 'private' and is still accepted.
+$deploymentProfile = (& azd env get-value DEPLOYMENT_PROFILE 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($deploymentProfile)) {
+    $deploymentProfile = 'core'
+}
+$deploymentProfile = $deploymentProfile.Trim()
+$resolvedProfile = if ($deploymentProfile -eq 'minimal') { 'private' } else { $deploymentProfile }
+
+# The repository tag used to be hard-coded in infra/main.bicep, which meant
+# every repository created from this template mislabelled its resources.
+$repository = (& azd env get-value AZURE_REPOSITORY 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repository)) {
+    $repository = Get-RepositoryName -Path (Split-Path -Parent $PSScriptRoot)
+    Invoke-Azd -Arguments @('env', 'set', 'AZURE_REPOSITORY', $repository)
+}
 
 $subscriptionId = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_ID'
 $subscriptionName = & az account show --subscription $subscriptionId `
@@ -97,12 +115,21 @@ Invoke-Azd -Arguments @('env', 'set', 'AZURE_FEATURE_OVERRIDES_BASE64', $feature
 
 $operatorPrincipalIds = (& azd env get-value AZURE_OPERATOR_PRINCIPAL_IDS 2>$null)
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($operatorPrincipalIds)) {
-    $signedInUserId = (& az ad signed-in-user show --query id --output tsv --only-show-errors 2>$null)
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($signedInUserId)) {
-        $operatorPrincipalIds = $signedInUserId.Trim()
+    # Operator RBAC only matters once a jumpbox exists. In the core and private
+    # profiles the Entra lookup is skipped entirely, so a deployment never needs
+    # directory read permission it does not use.
+    if ($resolvedProfile -eq 'full') {
+        $signedInUserId = (& az ad signed-in-user show --query id --output tsv --only-show-errors 2>$null)
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($signedInUserId)) {
+            $operatorPrincipalIds = $signedInUserId.Trim()
+        }
+        else {
+            $operatorPrincipalIds = ''
+        }
     }
     else {
         $operatorPrincipalIds = ''
     }
+
     Invoke-Azd -Arguments @('env', 'set', 'AZURE_OPERATOR_PRINCIPAL_IDS', $operatorPrincipalIds)
 }

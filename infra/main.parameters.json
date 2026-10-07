@@ -12,7 +12,10 @@
       "value": "${AZURE_SUBSCRIPTION_CODE}"
     },
     "deploymentProfile": {
-      "value": "${DEPLOYMENT_PROFILE=full}"
+      "value": "${DEPLOYMENT_PROFILE=core}"
+    },
+    "repository": {
+      "value": "${AZURE_REPOSITORY}"
     },
     "featureOverridesBase64": {
       "value": "${AZURE_FEATURE_OVERRIDES_BASE64}"
