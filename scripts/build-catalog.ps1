@@ -71,6 +71,40 @@ function Read-ModuleMetadata {
         }
     }
 
+    foreach ($key in @('name', 'displayName', 'description', 'kind', 'nameRule')) {
+        if ($metadata[$key] -isnot [string]) { throw "Module metadata '$Path': '$key' must be a string." }
+    }
+    if ($null -ne $metadata.featureFlag -and
+        ($metadata.featureFlag -isnot [string] -or $metadata.featureFlag -cnotmatch '^[a-z][A-Za-z0-9]*$')) {
+        throw "Module metadata '$Path': 'featureFlag' must be null or a camelCase feature name."
+    }
+    foreach ($key in @('profiles', 'providers', 'privateEndpoints', 'roles')) {
+        if ($metadata[$key] -isnot [array]) { throw "Module metadata '$Path': '$key' must be an array." }
+    }
+    if ($metadata.preflight -isnot [System.Collections.IDictionary] -or
+        -not $metadata.preflight.Contains('checks') -or
+        $metadata.preflight.checks -isnot [array] -or
+        -not $metadata.preflight.Contains('requiresOperatorPrincipals') -or
+        $metadata.preflight.requiresOperatorPrincipals -isnot [bool]) {
+        throw "Module metadata '$Path': preflight requires a checks array and a boolean requiresOperatorPrincipals."
+    }
+    foreach ($endpoint in $metadata.privateEndpoints) {
+        foreach ($key in @('zoneKey', 'dnsZone', 'linkSuffix', 'connectionName')) {
+            if ($endpoint -isnot [System.Collections.IDictionary] -or
+                -not $endpoint.Contains($key) -or [string]::IsNullOrWhiteSpace([string] $endpoint[$key])) {
+                throw "Module metadata '$Path': privateEndpoints requires '$key'."
+            }
+        }
+        if (-not $endpoint.Contains('groupIds') -or $endpoint.groupIds -isnot [array] -or $endpoint.groupIds.Count -eq 0) {
+            throw "Module metadata '$Path': privateEndpoints requires a nonempty groupIds array."
+        }
+    }
+    foreach ($role in $metadata.roles) {
+        if ($role -isnot [System.Collections.IDictionary] -or -not $role.Contains('name') -or -not $role.Contains('id')) {
+            throw "Module metadata '$Path': each role requires name and id."
+        }
+    }
+
     $folderName = Split-Path -Leaf (Split-Path -Parent $Path)
     if ([string] $metadata['name'] -cne $folderName) {
         throw "Module metadata '$Path' declares name '$($metadata['name'])' but lives in folder '$folderName'."

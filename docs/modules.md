@@ -182,7 +182,19 @@ it yourself:
 ```
 
 You still add the feature flag, the name variable, and the outputs by hand; the
-printed snippet includes all four parts.
+printed snippet includes all four parts. Define the new feature in Bicep and
+preflight with a **false** default, then opt in explicitly; catalog membership
+and metadata `profiles` do not enable deployment. Unknown or null feature flags
+are not enabled by preflight unless the composition explicitly selects them.
+
+Automatic wiring supports resource modules whose required inputs are covered by
+the common naming/location/tags and declared private-endpoint bindings and whose
+outputs include string `id` and `name`. It compiles the target module to check
+that contract **before editing**. The shipped composites and resource modules
+requiring additional inputs (Key Vault usernames/workspace, Storage workspace,
+Bastion public IP/subnet/workspace, NAT public IP) require manual composition.
+The error lists required inputs and unsupported outputs; no partial snippet is
+inserted. An already-wired module remains an idempotent no-op.
 
 ### Promoting a module from another repository
 
@@ -196,14 +208,29 @@ proven in a real project is copied back into the catalog:
 
 The script validates the source against the full contract *before* copying,
 builds and lints it, copies only `main.bicep`, `metadata.json` and `README.md`,
-regenerates the catalog, runs the catalog conformance suite, and rolls back if
-anything fails. It refuses to promote a module that violates the contract.
+regenerates the catalog **and docs** in an isolated candidate, and runs the real
+catalog conformance suite before replacement. A failed forced promotion preserves
+the existing module (including uncommitted files) and exact generated-file bytes.
+Publication failures restore those files without a broad Git rollback; unrelated
+staged/unstaged changes are untouched. Successful promotion stages the three
+contract files plus catalog, DNS index and `docs/modules.md` unless `-NoStage`.
+The conformance suite and generated-document markers are required, not skipped.
 
 ### Adopting the conventions in an existing repository
 
 `adopt-conventions.ps1` pushes `infra/core/**`, the shared scripts, the naming
 instructions, and the `azure.yaml` hook block into a repository that was not
 created from this template:
+
+The target must first have its own `infra/modules/catalog.json` consistent with
+its composition; adoption rejects a missing catalog before writing. The hooks
+use `azd env get-value` / `azd env set` for `DEPLOYMENT_PROFILE` (default `core`),
+not script parameters or a possibly stale process environment variable. The
+copied runtime includes naming, module selection, and region-code dependencies.
+Review the printed hooks and align the target's Bicep/profile contract before use.
+Promotion in an adopted repository additionally requires its catalog test suite
+and `docs/modules.md` generated markers; adoption never overwrites those
+project-owned files or silently skips that gate.
 
 ```powershell
 ./scripts/adopt-conventions.ps1 -Path D:\path\to\other-repo -WhatIf
@@ -227,5 +254,5 @@ be identified.
 
 The catalog suite checks the contract files, the metadata schema, abbreviation
 and zone-key uniqueness, catalog freshness, required parameters and outputs, the
-public-capable branch of every Private Link module, and that every module's
-providers are known to preflight.
+public-capable branch of every Private Link module, and metadata-driven preflight
+selection without automatically enabling arbitrary additions.

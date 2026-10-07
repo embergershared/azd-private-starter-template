@@ -163,21 +163,35 @@ if ($violations.Count -gt 0) {
     throw "Module '$Name' violates the catalog contract:`n  - $($violations -join "`n  - ")"
 }
 
-# Build and lint from a staging folder inside infra/modules/, not from the
-# source path. A conforming module references ../../core/private-endpoint.bicep,
-# which only resolves at the catalog depth, so building in place would reject
-# every module that uses the shared private endpoint pattern.
-$staging = Join-Path $modulesRoot ".promote-staging-$Name"
+# Validate a complete candidate repository before touching any existing file.
+# Its directory layout preserves relative Bicep imports and the real gates.
+$staging = Join-Path $repoRoot ('.promotion-' + [guid]::NewGuid().ToString('N'))
+$generatedFiles = @('infra/modules/catalog.json', 'infra/core/private-dns-zones.json', 'docs/modules.md')
+$originalGenerated = @{}
+$backup = Join-Path $staging 'original-module'
+$replacementStarted = $false
+$hadOriginal = Test-Path -LiteralPath $destination
 try {
-    # -WhatIf:$false because staging is internal scratch. Validation must still
-    # run under -WhatIf; that is exactly what -WhatIf is for here.
-    if (Test-Path -LiteralPath $staging) {
-        Remove-Item -LiteralPath $staging -Recurse -Force -WhatIf:$false
+    foreach ($required in @('scripts/build-catalog.ps1', 'scripts/build-docs.ps1', 'tests/run-tests.ps1', 'docs/modules.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $required))) {
+            throw "Promotion requires '$required'. Restore the catalog tooling and conformance suite before promoting."
+        }
     }
     New-Item -ItemType Directory -Path $staging -Force -WhatIf:$false | Out-Null
-    Copy-Item -LiteralPath $bicepPath -Destination (Join-Path $staging 'main.bicep') -Force -WhatIf:$false
-    $stagedBicepPath = Join-Path $staging 'main.bicep'
-
+    foreach ($folder in @('infra', 'scripts', 'tests', 'docs')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot $folder) -Destination $staging -Recurse -Force -WhatIf:$false
+    }
+    $candidate = Join-Path $staging "infra/modules/$Name"
+    if (Test-Path -LiteralPath $candidate) {
+        Remove-Item -LiteralPath $candidate -Recurse -Force -WhatIf:$false
+    }
+    New-Item -ItemType Directory -Path $candidate -Force -WhatIf:$false | Out-Null
+    foreach ($file in @('main.bicep', 'metadata.json', 'README.md')) {
+        Copy-Item -LiteralPath (Join-Path $source $file) -Destination $candidate -Force -WhatIf:$false
+    }
+    $catalogResult = & (Join-Path $staging 'scripts/build-catalog.ps1') -WhatIf:$false
+    & (Join-Path $staging 'scripts/build-docs.ps1') -WhatIf:$false | Out-Null
+    $stagedBicepPath = Join-Path $candidate 'main.bicep'
     $buildOutput = & az bicep build --file $stagedBicepPath --stdout 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         throw "Module '$Name' does not build:`n$buildOutput"
@@ -186,65 +200,62 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Module '$Name' does not lint cleanly:`n$lintOutput"
     }
+    & (Join-Path $staging 'tests/run-tests.ps1') -Name catalog | Out-Null
+    $testsPassed = $true
+
+    if (-not $PSCmdlet.ShouldProcess($destination, "Promote module '$Name' into the catalog")) {
+        return [pscustomobject] @{
+            Module = $Name; Source = $source; Destination = $destination
+            Action = 'WhatIf'; Changed = $false
+        }
+    }
+    foreach ($relative in $generatedFiles) {
+        $path = Join-Path $repoRoot $relative
+        $originalGenerated[$relative] = if (Test-Path -LiteralPath $path) { [IO.File]::ReadAllBytes($path) } else { $null }
+    }
+    if ($hadOriginal) {
+        Copy-Item -LiteralPath $destination -Destination $backup -Recurse -Force
+    }
+    $replacementStarted = $true
+    if ($hadOriginal) {
+        Remove-Item -LiteralPath $destination -Recurse -Force
+    }
+    Copy-Item -LiteralPath $candidate -Destination $destination -Recurse -Force
+    foreach ($relative in $generatedFiles) {
+        Copy-Item -LiteralPath (Join-Path $staging $relative) -Destination (Join-Path $repoRoot $relative) -Force
+    }
+
+    $staged = $false
+    if (-not $NoStage) {
+        & git -C $repoRoot add -- "infra/modules/$Name/main.bicep" `
+            "infra/modules/$Name/metadata.json" "infra/modules/$Name/README.md" @generatedFiles
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to stage promotion; git add failed.' }
+        $staged = $true
+    }
+}
+catch {
+    if ($replacementStarted) {
+        if (Test-Path -LiteralPath $destination) {
+            Remove-Item -LiteralPath $destination -Recurse -Force -WhatIf:$false
+        }
+        if ($hadOriginal) {
+            Copy-Item -LiteralPath $backup -Destination $destination -Recurse -Force -WhatIf:$false
+        }
+        foreach ($relative in $generatedFiles) {
+            $path = Join-Path $repoRoot $relative
+            if ($null -eq $originalGenerated[$relative]) {
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -WhatIf:$false }
+            }
+            else {
+                [IO.File]::WriteAllBytes($path, $originalGenerated[$relative])
+            }
+        }
+    }
+    throw
 }
 finally {
     if (Test-Path -LiteralPath $staging) {
         Remove-Item -LiteralPath $staging -Recurse -Force -WhatIf:$false
-    }
-}
-
-# ---------------------------------------------------------------------------
-# Copy, regenerate the catalog, then re-run the full conformance suite.
-# ---------------------------------------------------------------------------
-
-if (-not $PSCmdlet.ShouldProcess($destination, "Promote module '$Name' into the catalog")) {
-    return [pscustomobject] @{
-        Module      = $Name
-        Source      = $source
-        Destination = $destination
-        Action      = 'WhatIf'
-        Changed     = $false
-    }
-}
-
-if (Test-Path -LiteralPath $destination) {
-    Remove-Item -LiteralPath $destination -Recurse -Force
-}
-New-Item -ItemType Directory -Path $destination -Force | Out-Null
-
-# Only the contract files are promoted. Anything else in the source folder is a
-# project-local concern that does not belong in the shared catalog.
-foreach ($file in @('main.bicep', 'metadata.json', 'README.md')) {
-    Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $destination $file) -Force
-}
-
-$catalogResult = & (Join-Path $PSScriptRoot 'build-catalog.ps1')
-
-$testRunner = Join-Path $repoRoot 'tests/run-tests.ps1'
-$testsPassed = $null
-if (Test-Path -LiteralPath $testRunner) {
-    try {
-        & $testRunner -Name catalog | Out-Null
-        $testsPassed = $true
-    }
-    catch {
-        Remove-Item -LiteralPath $destination -Recurse -Force
-        & (Join-Path $PSScriptRoot 'build-catalog.ps1') | Out-Null
-        throw "Conformance tests failed for '$Name'. The promotion was rolled back.`n$($_.Exception.Message)"
-    }
-}
-
-$staged = $false
-if (-not $NoStage) {
-    & git -C $repoRoot add -- `
-        "infra/modules/$Name" `
-        'infra/modules/catalog.json' `
-        'infra/core/private-dns-zones.json'
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Unable to stage the promoted files. Stage them by hand."
-    }
-    else {
-        $staged = $true
     }
 }
 

@@ -91,6 +91,14 @@ if (-not (Test-Path -LiteralPath $mainBicepPath)) {
 }
 
 $camel = ConvertTo-CamelCase -Value $Module
+$content = Get-Content -LiteralPath $mainBicepPath -Raw
+$normalized = $content -replace "`r`n", "`n"
+if ($normalized -match "(?m)^module\s+$([regex]::Escape($camel))\s") {
+    return [pscustomobject] @{
+        Module = $Module; Path = $mainBicepPath; Action = 'AlreadyPresent'
+        Changed = $false; Snippet = ''
+    }
+}
 $pascal = ConvertTo-PascalCase -Value $Module
 $upper = ($Module -replace '-', '_').ToUpperInvariant()
 $endpoints = @($entry.privateEndpoints)
@@ -169,6 +177,27 @@ if ($endpoints.Count -gt 0) {
     $moduleParamLines.Add("    privateEndpointSubnetId: deployNetwork ? network!.outputs.privateEndpointSubnetId : ''")
 }
 
+# Ask the compiler for the actual target module contract, not a regex guess at
+# defaults or an assumption that composites expose resource-style outputs.
+$targetModule = Join-Path $Path "infra/modules/$Module/main.bicep"
+if (-not (Test-Path -LiteralPath $targetModule)) {
+    throw "Copy the complete '$Module' module and its core dependencies to '$targetModule' before wiring it."
+}
+$compiledJson = & az bicep build --file $targetModule --stdout
+if ($LASTEXITCODE -ne 0) { throw "Unable to compile '$targetModule'; no wiring was changed." }
+$contract = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
+$bindings = @($moduleParamLines | ForEach-Object { ($_ -split ':', 2)[0].Trim() })
+$missing = @($contract.parameters.Keys | Where-Object {
+    -not $contract.parameters[$_].Contains('defaultValue') -and $_ -notin $bindings
+} | Sort-Object)
+$unknown = @($bindings | Where-Object { -not $contract.parameters.Contains($_) })
+$missingOutputs = @('id', 'name' | Where-Object {
+    -not $contract.Contains('outputs') -or -not $contract.outputs.Contains($_) -or $contract.outputs[$_].type -ne 'string'
+})
+if ($missing.Count -or $unknown.Count -or $missingOutputs.Count -or $entry.kind -ne 'resource') {
+    throw "Cannot automatically wire '$Module'. Required inputs needing explicit bindings: [$($missing -join ', ')]. Unsupported generated inputs: [$($unknown -join ', ')]. Missing string outputs: [$($missingOutputs -join ', ')]. Composite modules require manual composition. Use infra/modules/$Module/README.md and its main.bicep to bind these inputs and supported outputs manually; no files were changed."
+}
+
 $condition = if ($entry.featureFlag) { " = if (deploy$pascal)" } else { ' =' }
 
 $moduleBlock = @"
@@ -207,7 +236,7 @@ output AZURE_$($upper)_NAME string = $outputExpressionName
 
 $snippetSections = [System.Collections.Generic.List[string]]::new()
 if ($flagLine) {
-    $snippetSections.Add("// 1. Feature flag - place next to the other deploy* variables.`n//    Also add '$($entry.featureFlag)' to featureSettings and to`n//    infra/main.bicep's enable* parameters.`n$flagLine")
+    $snippetSections.Add("// 1. Feature flag - place next to the other deploy* variables.`n//    Add '$($entry.featureFlag)' to featureSettings with default false and`n//    explicitly wire the same opt-in into preflight's featureSettings.`n$flagLine")
 }
 $snippetSections.Add("// 2. Resource names - place next to the other name variables.`n$($nameLines -join "`n")")
 $snippetSections.Add("// 3. Module - place inside the // #region modules block.`n$moduleBlock")

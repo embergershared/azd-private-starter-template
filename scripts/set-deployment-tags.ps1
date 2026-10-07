@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 function Invoke-Azd {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string[]] $Arguments
     )
 

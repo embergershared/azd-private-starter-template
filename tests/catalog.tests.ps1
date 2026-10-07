@@ -189,15 +189,20 @@ Test-Case 'private DNS virtual network link names are preserved' {
     }
 }
 
-Test-Case 'every catalog module is known to preflight' {
-    # Assert-Match would echo the whole of preflight.ps1 on failure, so test the
-    # membership directly and keep the message about the module.
+Test-Case 'preflight selects catalog modules through metadata without implicitly enabling additions' {
+    . (Get-RepoPath 'scripts/module-selection.ps1')
     $preflight = Get-Content -LiteralPath (Get-RepoPath 'scripts/preflight.ps1') -Raw
-    foreach ($module in $catalog.modules) {
-        $referenced = $preflight.Contains("'$($module.name)'")
-        Assert-True -Condition $referenced `
-            -Message "Module '$($module.name)' is not referenced by scripts/preflight.ps1, so its provider registration would never be checked. Add it to the `$moduleEnabled map in scripts/preflight.ps1."
-    }
+    Assert-True -Condition $preflight.Contains('Get-EnabledCatalogModules -Modules $catalog.modules') -Message 'Preflight must use catalog selection.'
+    $modules = @(
+        @{ name = 'new-enabled'; featureFlag = 'approvedFeature'; providers = @('Microsoft.Example') }
+        @{ name = 'new-disabled'; featureFlag = 'disabledFeature' }
+        @{ name = 'new-unknown'; featureFlag = 'unwiredFeature' }
+        @{ name = 'new-unconditional'; featureFlag = $null }
+    )
+    $enabled = @(Get-EnabledCatalogModules -Modules $modules -Features @{ approvedFeature = $true; disabledFeature = $false } -Composition @{})
+    Assert-Equal -Actual $enabled.Count -Expected 1 -Message 'Only explicitly enabled known features may be selected.'
+    Assert-Equal -Actual $enabled[0].name -Expected 'new-enabled' -Message 'New module names must not require hardcoding.'
+    Assert-Equal -Actual $enabled[0].providers[0] -Expected 'Microsoft.Example' -Message 'Provider metadata must survive selection.'
 }
 
 Test-Case 'every declared provider is a Microsoft resource provider namespace' {

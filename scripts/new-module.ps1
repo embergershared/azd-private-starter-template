@@ -385,7 +385,7 @@ if ($PSCmdlet.ShouldProcess('infra/modules/catalog.json', 'Regenerate')) {
     NextSteps = @(
         "Replace the TODO placeholders in infra/modules/$Name/main.bicep",
         "Document the module in infra/modules/$Name/README.md",
-        "Add '$Name' to the `$moduleEnabled map in scripts/preflight.ps1",
+        "Explicitly wire '$zoneKey' into Bicep and preflight featureSettings with a false default; catalog membership never enables it",
         './scripts/build-docs.ps1',
         "Wire it in with ./scripts/add-module.ps1 -Module $Name",
         './tests/run-tests.ps1'

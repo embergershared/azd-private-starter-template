@@ -4,6 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'naming.ps1')
+. (Join-Path $PSScriptRoot 'module-selection.ps1')
 
 function Invoke-AzJson {
     param(
@@ -152,29 +153,13 @@ $moduleEnabled = @{
     'jumpboxes'   = $anyVm
 }
 
-$enabledModules = @()
-foreach ($module in $catalog.modules) {
+$enabledModules = @(Get-EnabledCatalogModules -Modules $catalog.modules -Features $featureSettings -Composition $moduleEnabled)
+foreach ($module in $enabledModules) {
     $name = [string] $module['name']
-
-    if ($moduleEnabled.ContainsKey($name)) {
-        $enabled = [bool] $moduleEnabled[$name]
-    }
-    elseif ($null -ne $module['featureFlag'] -and $featureSettings.Contains([string] $module['featureFlag'])) {
-        $enabled = [bool] $featureSettings[[string] $module['featureFlag']]
-    }
-    else {
-        throw "Catalog module '$name' declares feature flag '$($module['featureFlag'])', which is not a known feature. Wire it into scripts/preflight.ps1."
-    }
-
-    if (-not $enabled) {
-        continue
-    }
-
     if ($module['profiles'] -notcontains $resolvedProfile) {
         Write-Warning "Module '$name' is enabled by an override but is not part of the '$resolvedProfile' profile."
     }
 
-    $enabledModules += , $module
 }
 
 # ---------------------------------------------------------------------------
@@ -207,7 +192,7 @@ if ($account.state -ne 'Enabled') {
 $null = Assert-SubscriptionCode -SubscriptionName $account.name `
     -CachedCode $cachedSubscriptionCode
 
-$locations = Invoke-AzJson -Arguments @('account', 'list-locations', '--query', "[?name=='$location'].name")
+$locations = @(Invoke-AzJson -Arguments @('account', 'list-locations', '--query', "[?name=='$location'].name"))
 if ($locations.Count -eq 0) {
     throw "Azure location '$location' is not recognized."
 }
@@ -256,7 +241,7 @@ $requiresOperatorPrincipals = $featureSettings.roleAssignments -and
     @($enabledModules | Where-Object { $_['preflight']['requiresOperatorPrincipals'] }).Count -gt 0
 
 $operatorPrincipalIdsCsv = (& azd env get-value AZURE_OPERATOR_PRINCIPAL_IDS 2>$null)
-$operatorPrincipalIds = if (
+$operatorPrincipalIds = @(if (
     $LASTEXITCODE -ne 0 -or
     [string]::IsNullOrWhiteSpace($operatorPrincipalIdsCsv)
 ) {
@@ -265,7 +250,7 @@ $operatorPrincipalIds = if (
 else {
     @($operatorPrincipalIdsCsv.Split(',', [StringSplitOptions]::RemoveEmptyEntries) |
         ForEach-Object { $_.Trim() })
-}
+})
 
 if ($requiresOperatorPrincipals -and $operatorPrincipalIds.Count -eq 0) {
     throw 'At least one Entra operator principal ID is required when a jumpbox is deployed with role assignments enabled. Set AZURE_OPERATOR_PRINCIPAL_IDS or disable the roleAssignments feature.'
@@ -306,14 +291,14 @@ if ($requestedChecks.Contains('vmSkuAvailability')) {
         $vmSizes += 'Standard_D2s_v5'
     }
     foreach ($vmSize in $vmSizes) {
-        $sku = Invoke-AzJson -Arguments @(
+        $sku = @(Invoke-AzJson -Arguments @(
             'vm', 'list-skus',
             '--subscription', $subscriptionId,
             '--location', $location,
             '--size', $vmSize,
             '--all',
             '--query', "[?name=='$vmSize']"
-        )
+        ))
 
         if ($sku.Count -eq 0) {
             throw "VM size '$vmSize' is unavailable or restricted in '$location'."

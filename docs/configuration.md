@@ -31,9 +31,11 @@ deploy public-with-firewall because there is no private endpoint subnet.
 warning and resolves it to `private`; update the environment with
 `azd env set DEPLOYMENT_PROFILE private`.
 
-Moving down the ladder removes resources. Always inspect
-`azd provision --preview` before applying a profile change to a deployed
-environment.
+Moving down the ladder stops deploying disabled resources. ARM incremental
+deployments can retain previously deployed resources, which may continue billing.
+Always inspect `azd provision --preview` before a profile change. Cleanup requires
+separate explicit approval and review of data retention, identities, dependencies,
+and rollback/recovery; changing profiles does not guarantee deletion.
 
 ## Required environment values
 

@@ -52,6 +52,10 @@ if ($target -eq $repoRoot) {
     throw 'The target repository is this template. Nothing to adopt.'
 }
 
+if (-not (Test-Path -LiteralPath (Join-Path $target 'infra/modules/catalog.json'))) {
+    throw 'Adoption requires a project-owned infra/modules/catalog.json matching the target composition. Prepare module metadata and build the catalog first; no files were changed. The hooks do not infer resources from arbitrary Bicep.'
+}
+
 $template = Get-TemplateVersion
 $stampPath = Join-Path $target '.azd-starter.json'
 
@@ -68,8 +72,10 @@ $payload = @(
     'infra/core/location-codes.json'
     'scripts/naming.ps1'
     'scripts/preflight.ps1'
+    'scripts/module-selection.ps1'
     'scripts/set-deployment-tags.ps1'
     'scripts/build-catalog.ps1'
+    'scripts/build-docs.ps1'
     'scripts/new-module.ps1'
     'scripts/add-module.ps1'
     'scripts/promote-module.ps1'
@@ -179,16 +185,21 @@ hooks:
     shell: pwsh
     continueOnError: false
     run: |
-      $deploymentProfile = if ($env:DEPLOYMENT_PROFILE) { $env:DEPLOYMENT_PROFILE } else { 'core' }
-      ./scripts/set-deployment-tags.ps1 -DeploymentProfile $deploymentProfile
-      ./scripts/preflight.ps1 -DeploymentProfile $deploymentProfile
+      $ErrorActionPreference = 'Stop'
+      $deploymentProfile = azd env get-value DEPLOYMENT_PROFILE 2>$null
+      if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($deploymentProfile)) {
+        azd env set DEPLOYMENT_PROFILE core
+        if ($LASTEXITCODE -ne 0) { throw "Unable to initialize DEPLOYMENT_PROFILE." }
+      }
+      ./scripts/set-deployment-tags.ps1
+      ./scripts/preflight.ps1
 '@
 
 $azureYamlPath = Join-Path $target 'azure.yaml'
 $hookState = 'Missing'
 if (Test-Path -LiteralPath $azureYamlPath) {
     $azureYaml = Get-Content -LiteralPath $azureYamlPath -Raw
-    $hookState = if ($azureYaml -match 'set-deployment-tags\.ps1' -and $azureYaml -match 'preflight\.ps1') {
+    $hookState = if (($azureYaml -replace "`r`n", "`n").Contains($hookBlock -replace "`r`n", "`n")) {
         'Present'
     }
     else {

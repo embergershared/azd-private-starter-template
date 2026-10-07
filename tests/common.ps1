@@ -46,9 +46,18 @@ function Get-CompiledTemplate {
         return $script:CompiledTemplates[$full]
     }
 
-    $json = az bicep build --file $full --stdout 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "az bicep build failed for '$full':`n$($json -join [Environment]::NewLine)"
+    $diagnostics = Join-Path $script:RepoRoot ('.bicep-diagnostics-' + [guid]::NewGuid().ToString('N'))
+    try {
+        $json = az bicep build --file $full --stdout 2> $diagnostics
+        $exitCode = $LASTEXITCODE
+        $stderr = if (Test-Path -LiteralPath $diagnostics) { [IO.File]::ReadAllText($diagnostics) } else { '' }
+        if ($exitCode -ne 0) {
+            throw "az bicep build failed for '$full' (exit $exitCode):`n$stderr`n$($json -join [Environment]::NewLine)"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) { Write-Warning $stderr.Trim() }
+    }
+    finally {
+        if (Test-Path -LiteralPath $diagnostics) { Remove-Item -LiteralPath $diagnostics -Force }
     }
 
     $template = ($json -join [Environment]::NewLine) | ConvertFrom-Json

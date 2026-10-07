@@ -79,9 +79,11 @@ modules you opt into.
 Update existing environments with
 `azd env set DEPLOYMENT_PROFILE private`.
 
-Moving down the ladder removes resources. Re-provisioning a `full` environment
-as `core` proposes deletion of the VNet, Bastion and both VMs, so always inspect
-`azd provision --preview` before applying a profile change.
+Moving down the ladder stops deploying disabled resources; ARM incremental
+deployments can retain the existing VNet, Bastion, VMs and other resources, which
+may continue billing. Inspect `azd provision --preview` before a profile change.
+Cleanup is a separate, explicitly approved operation after reviewing data
+retention, identities, dependencies and rollback/recovery; a downgrade is not cleanup.
 
 For combinations between the rungs, use the documented
 [expert feature overrides](docs/configuration.md#expert-feature-overrides).
@@ -112,7 +114,7 @@ zone list and the documentation tables are all derived from it.
 
 ```powershell
 ./scripts/new-module.ps1 -Name service-bus -Abbreviation sbns -Provider Microsoft.ServiceBus -ResourceType Microsoft.ServiceBus/namespaces -ApiVersion 2022-10-01-preview
-./scripts/add-module.ps1 -Module key-vault      # wire an existing module in
+./scripts/add-module.ps1 -Module service-bus    # generate supported wiring; complete printed declarations
 ./scripts/promote-module.ps1 -From <path>       # bring a proven module back into the catalog
 ./scripts/adopt-conventions.ps1 -Path <repo>    # push the conventions into an existing repo
 ```
