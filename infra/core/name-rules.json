@@ -2,7 +2,7 @@
   "$comment": "Azure resource-name rules. 'classes' are the naming strategies a catalog module selects through its metadata.json 'nameRule' field. 'resources' are the per-resource-type constraints the rules test enforces against rendered names.",
   "classes": {
     "regional": {
-      "description": "Hyphenated regional name: <abbreviation>-<location>-<subscription>-<environment>[-<suffix>]. The default for anything that is not globally unique.",
+      "description": "Hyphenated regional name: <abbreviation>-[<tenant>-]<location>-<subscription>-<environment>[-<suffix>]. The default for anything that is not globally unique.",
       "separator": "-",
       "case": "lower",
       "charset": "^[a-z0-9-]+$",
@@ -66,7 +66,17 @@
     "windowsComputerName": { "maxLength": 15, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "virtualMachine", "class": "hostname" },
     "windowsNic": { "maxLength": 80, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
     "linuxVm": { "maxLength": 64, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
-    "linuxNic": { "maxLength": 80, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" }
+    "linuxNic": { "maxLength": 80, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
+    "containerAppsNsg": { "maxLength": 80, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
+    "containerAppsSubnet": { "maxLength": 80, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "virtualNetwork", "class": "regional" },
+    "containerAppsEnvironment": { "maxLength": 60, "minLength": 2, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
+    "managedResourceGroup": { "maxLength": 90, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "subscription", "class": "regional" },
+    "containerApp": { "maxLength": 32, "minLength": 2, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
+    "containerRegistry": { "maxLength": 50, "minLength": 5, "charset": "^[a-z0-9]+$", "case": "lower", "scope": "global", "class": "globalCompact" },
+    "managedIdentity": { "maxLength": 128, "minLength": 3, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" },
+    "aiFoundry": { "maxLength": 64, "minLength": 2, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "global", "class": "global" },
+    "aiFoundryProject": { "maxLength": 64, "minLength": 2, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "aiFoundry", "class": "regional" },
+    "mapsAccount": { "maxLength": 98, "minLength": 1, "charset": "^[a-z0-9-]+$", "case": "lower", "scope": "resourceGroup", "class": "regional" }
   },
   "reserved": {
     "AzureBastionSubnet": "Azure mandates this exact subnet name for Azure Bastion. It must never be generated from the naming convention."

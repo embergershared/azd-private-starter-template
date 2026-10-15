@@ -149,6 +149,7 @@ Test-Case 'new-module to add-module completed snippet compiles and repeat wiring
 targetScope = 'subscription'
 import { azName, abbreviations } from './core/naming.bicep'
 param location string = 'eastus'
+var tenantCode = '100001'
 var locationCode = 'eus'
 var subscriptionCode = 's1'
 var environmentName = 'test'
@@ -210,7 +211,7 @@ foreach ($profile in @('', 'private', 'minimal', 'full')) {
                 switch ("$($args[0]) $($args[1])") {
                     'account show' {
                         if ($args -contains 'tsv') { return 'fixture-1' }
-                        return '{"name":"fixture-1","state":"Enabled"}'
+                        return '{"name":"fixture-1","state":"Enabled","tenantId":"00000000-0000-4000-8000-000000000001"}'
                     }
                     'account list-locations' { return '["eastus"]' }
                     'provider show' { return 'Registered' }

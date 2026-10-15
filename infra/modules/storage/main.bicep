@@ -26,6 +26,11 @@ param filePrivateDnsZoneId string = ''
 param logAnalyticsWorkspaceId string
 param enableRoleAssignments bool = true
 param operatorPrincipalIds array = []
+@description('Private blob containers to create.')
+param blobContainerNames array = []
+@description('Delete block blobs in blobContainerNames this many days after their last modification. 0 disables the lifecycle rule.')
+@minValue(0)
+param deleteBlobsAfterDays int = 0
 
 // One module body serves every profile. With the private-networking inputs
 // supplied the account is private-only; without them it stays reachable on the
@@ -99,6 +104,50 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2025-01-01'
       days: 7
     }
   }
+}
+
+resource blobContainers 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-01-01' = [
+  for containerName in blobContainerNames: {
+    parent: blobService
+    name: containerName
+    properties: {
+      publicAccess: 'None'
+    }
+  }
+]
+
+resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2025-01-01' = if (deleteBlobsAfterDays > 0 && !empty(blobContainerNames)) {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          name: 'expire-blobs'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [for containerName in blobContainerNames: '${containerName}/']
+            }
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: deleteBlobsAfterDays
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    blobContainers
+  ]
 }
 
 resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01' = {

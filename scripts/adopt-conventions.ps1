@@ -70,6 +70,7 @@ $payload = @(
     'infra/core/name-rules.json'
     'infra/core/abbreviations.json'
     'infra/core/location-codes.json'
+    'infra/core/tenant-codes.json'
     'scripts/naming.ps1'
     'scripts/preflight.ps1'
     'scripts/module-selection.ps1'
@@ -199,7 +200,7 @@ $azureYamlPath = Join-Path $target 'azure.yaml'
 $hookState = 'Missing'
 if (Test-Path -LiteralPath $azureYamlPath) {
     $azureYaml = Get-Content -LiteralPath $azureYamlPath -Raw
-    $hookState = if (($azureYaml -replace "`r`n", "`n").Contains($hookBlock -replace "`r`n", "`n")) {
+    $hookState = if (($azureYaml -replace "`r`n", "`n").Contains(($hookBlock -replace "`r`n", "`n"))) {
         'Present'
     }
     else {

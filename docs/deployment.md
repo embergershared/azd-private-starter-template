@@ -26,9 +26,11 @@ The deployment identity needs:
   metadata used by preflight. Preflight only queries the providers the enabled
   modules declare, so a `core` deployment makes no compute or network calls.
 
-  The target subscription display name must end in a hyphen-delimited 1-4 digit
-  token. The initialization helper caches that token as `s<digits>` for resource
-  naming, and preflight blocks if a later subscription rename would change it.
+  The subscription code comes from the display name's final hyphen-delimited
+  1-4 digit token (`-3` gives `s3`) or a delimited `s<N>` token
+  (`MngEnv100001-s2-Projects` gives `s2`), falling back to the subscription ID.
+  The initialization helper caches it for resource naming, and preflight blocks
+  if a later subscription rename would change it.
 
 Configured operator principals receive:
 
