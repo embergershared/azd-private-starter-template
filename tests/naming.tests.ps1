@@ -24,11 +24,13 @@ Set-StrictMode -Version Latest
 $abbreviationsPath = Get-RepoPath 'infra\core\abbreviations.json'
 $locationCodesPath = Get-RepoPath 'infra\core\location-codes.json'
 $nameRulesPath = Get-RepoPath 'infra\core\name-rules.json'
+$tenantCodesPath = Get-RepoPath 'infra\core\tenant-codes.json'
 $goldenPath = Get-RepoPath 'tests\fixtures\legacy-names.golden.json'
 
 $abbreviations = Get-Content -LiteralPath $abbreviationsPath -Raw | ConvertFrom-Json -AsHashtable
 $locationCodes = Get-Content -LiteralPath $locationCodesPath -Raw | ConvertFrom-Json -AsHashtable
 $nameRules = Get-Content -LiteralPath $nameRulesPath -Raw | ConvertFrom-Json -AsHashtable
+$tenantCodes = Get-Content -LiteralPath $tenantCodesPath -Raw | ConvertFrom-Json -AsHashtable
 $golden = Get-Content -LiteralPath $goldenPath -Raw | ConvertFrom-Json -AsHashtable
 $matrix = Get-LegacyNameMatrix
 
@@ -79,9 +81,9 @@ Test-Case 'compiled infra/main.bicep reproduces every pre-refactor resource name
     }
 }
 
-Test-Case 'the deployed my-azd-env-test names are unchanged' {
-    # The environment in .azure/my-azd-env-test is live. Pinning it explicitly
-    # makes a regression name the affected environment instead of a matrix index.
+Test-Case 'a tenant with an empty code keeps the pre-tenant my-azd-env-test names' {
+    # Pinning one environment explicitly makes a regression name the affected
+    # environment instead of a matrix index.
     $template = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra\main.bicep')
     $rendered = Get-BicepRenderedNames -Template $template -LocationCode 'use2' `
         -SubscriptionCode 's1' -EnvironmentName 'my-azd-env-test' -ShortUniqueSuffix 'abc'
@@ -96,10 +98,13 @@ Test-Case 'the deployed my-azd-env-test names are unchanged' {
 Test-Case 'every rendered name satisfies infra/core/name-rules.json' {
     $template = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra\main.bicep')
 
+    # The empty code covers pre-tenant names; twelve characters is the longest code allowed.
     foreach ($case in $matrix) {
+      foreach ($tenantCode in @('', ('9' * 12))) {
         $rendered = Get-BicepRenderedNames -Template $template `
             -LocationCode $case.LocationCode -SubscriptionCode $case.SubscriptionCode `
-            -EnvironmentName $case.EnvironmentName -ShortUniqueSuffix $case.ShortUniqueSuffix
+            -EnvironmentName $case.EnvironmentName -ShortUniqueSuffix $case.ShortUniqueSuffix `
+            -TenantCode $tenantCode
 
         foreach ($key in $rendered.Keys) {
             Assert-True $nameRules.resources.ContainsKey($key) `
@@ -119,7 +124,62 @@ Test-Case 'every rendered name satisfies infra/core/name-rules.json' {
             Assert-True $nameRules.classes.ContainsKey($rule.class) `
                 "'$key' references the undefined name class '$($rule.class)'."
         }
+      }
     }
+}
+
+Test-Case 'a tenant code is inserted into regional names only' {
+    $template = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra\main.bicep')
+
+    for ($i = 0; $i -lt $matrix.Count; $i++) {
+        $case = $matrix[$i]
+        $rendered = Get-BicepRenderedNames -Template $template `
+            -LocationCode $case.LocationCode -SubscriptionCode $case.SubscriptionCode `
+            -EnvironmentName $case.EnvironmentName -ShortUniqueSuffix $case.ShortUniqueSuffix `
+            -TenantCode '567410'
+        $body = "-$($case.LocationCode)-$($case.SubscriptionCode)-"
+
+        foreach ($key in $golden[$i].names.Keys) {
+            $old = [string] $golden[$i].names[$key]
+            $at = $old.IndexOf($body)
+            $expected = if ($nameRules.resources[$key].class -eq 'regional') {
+                $old.Substring(0, $at) + "-567410" + $old.Substring($at)
+            }
+            else { $old }
+            Assert-Equal $rendered[$key] $expected "'$key' did not place the tenant code correctly."
+        }
+    }
+
+    $bicepGroup = (Get-BicepRenderedNames -Template $template -LocationCode 'use2' -SubscriptionCode 's2' `
+            -EnvironmentName 'my-azd-env-test' -ShortUniqueSuffix 'abc' -TenantCode '567410').resourceGroup
+    Assert-Equal $bicepGroup 'rg-567410-use2-s2-my-azd-env-test' 'Contoso resource group name mismatch.'
+    Assert-Equal (Get-AzName -Abbreviation 'rg' -TenantCode '567410' -LocationCode 'use2' `
+            -SubscriptionCode 's2' -EnvironmentName 'my-azd-env-test') $bicepGroup `
+        'Get-AzName differs from the Bicep azName for a tenant code.'
+}
+
+Test-Case 'the tenant-code catalog is valid and agrees with Bicep tenantCodeFor' {
+    $template = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra\main.bicep')
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($entry in $tenantCodes.GetEnumerator()) {
+        $tenantId = [string] $entry.Key
+        $parsed = [Guid]::Empty
+        Assert-True ([Guid]::TryParseExact($tenantId, 'D', [ref] $parsed)) "Tenant key '$tenantId' is not a GUID."
+        Assert-Equal $tenantId $tenantId.ToLowerInvariant() 'Tenant keys must be lowercase.'
+        Assert-True (-not [string]::IsNullOrWhiteSpace([string] $entry.Value.name)) "Tenant '$tenantId' has no name."
+
+        $fromScript = Get-TenantCode -TenantId $tenantId.ToUpperInvariant() -CatalogPath $tenantCodesPath
+        $fromBicep = [string] (Invoke-ArmExpression -Expression "[__bicep.tenantCodeFor('$($tenantId.ToUpperInvariant())')]" `
+                -Template $template)
+        Assert-Equal $fromBicep $fromScript "Tenant code for '$tenantId' differs between PowerShell and Bicep."
+        if ($fromScript) { Assert-True ($seen.Add($fromScript)) "Tenant code '$fromScript' is duplicated." }
+    }
+
+    Assert-Equal (Get-TenantCode -TenantId 'dd045087-7959-4625-81a9-bf44022f1aa8' -CatalogPath $tenantCodesPath) '567410' `
+        'Contoso tenant code mismatch.'
+    Assert-Throws { Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $tenantCodesPath } `
+        'Unknown tenants must fail.'
 }
 
 Test-Case 'globally unique names keep prefix, location, subscription and hash' {
@@ -137,6 +197,26 @@ Test-Case 'globally unique names keep prefix, location, subscription and hash' {
             'Storage account name lost a mandatory segment.'
         Assert-Match $rendered.windowsComputerName "^w-.+-$hash$" `
             'Windows computer name lost a mandatory segment.'
+    }
+}
+
+Test-Case 'platform-managed resource groups are the owning resource group name plus -managed' {
+    $namingBicep = Get-Content -LiteralPath (Get-RepoPath 'infra/core/naming.bicep') -Raw
+    Assert-True ($namingBicep -cmatch "func managedResourceGroupName\(resourceGroupName string\) string => '\$\{resourceGroupName\}-managed'") `
+        'naming.bicep managedResourceGroupName must stay <resource group name>-managed.'
+
+    $template = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra/main.bicep')
+    $rule = $nameRules.resources['managedResourceGroup']
+    foreach ($case in $matrix) {
+        $rendered = Get-BicepRenderedNames -Template $template `
+            -LocationCode $case.LocationCode -SubscriptionCode $case.SubscriptionCode `
+            -EnvironmentName $case.EnvironmentName -ShortUniqueSuffix $case.ShortUniqueSuffix
+        $managed = Get-ManagedResourceGroupName -ResourceGroupName $rendered.resourceGroup
+
+        Assert-Equal $managed "$($rendered.resourceGroup)-managed" 'Managed resource group name drifted.'
+        Assert-True ($managed.Length -le $rule.maxLength) `
+            "Managed resource group name '$managed' exceeds $($rule.maxLength) characters."
+        Assert-Match $managed $rule.charset "Managed resource group name '$managed' breaks the charset rule."
     }
 }
 
@@ -178,9 +258,19 @@ Test-Case 'Get-LocationCode agrees with the Bicep locationCodeFor function' {
 Test-Case 'subscription codes derive and remain stable' {
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'ME-MngEnvMCAP391575-emberger-1') 's1' 'One-digit subscription code mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'example-1234') 's1234' 'Four-digit subscription code mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'MngEnv567410-s2-Projects') 's2' 'Delimited s<N> token mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Contoso_S12 Projects') 's12' 's<N> token delimiters mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Demo-s2-Projects-3') 's3' 'Numeric suffix must win over an s<N> token.'
+    Assert-Throws { Get-SubscriptionCode -SubscriptionName 'Projects2-Dev' } 'Undelimited token must not derive a code.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'example' -SubscriptionId '113c3bf3-dff3-4bb7-84e8-2cd44152185e') 's113c' `
+        'Subscription ID fallback mismatch.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example' } 'Missing subscription token must fail.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example-final' } 'Nonnumeric subscription token must fail.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example-12345' } 'Five-digit subscription token must fail.'
     Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'example-3' -CachedCode 's3') 's3' 'Cached subscription code mismatch.'
     Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'example-3' -CachedCode 's1' } 'Subscription code drift must fail.'
+    Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'MngEnv567410-s2-Projects' -CachedCode 's2') 's2' 's<N> cached code mismatch.'
+    Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'MngEnv567410-s2-Projects' -CachedCode 's1' } 's<N> code drift must fail.'
+    Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'Contoso Projects' -CachedCode 's7') 's7' `
+        'Explicit code must be accepted for a name without a code.'
 }

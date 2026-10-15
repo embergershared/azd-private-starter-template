@@ -40,6 +40,8 @@ Each endpoint is independent: you may wire only `blob` and leave `file` public.
 | `logAnalyticsWorkspaceId` | string | yes | Diagnostics target |
 | `enableRoleAssignments` | bool | no | Default `true` |
 | `operatorPrincipalIds` | array | no | Granted blob and file data roles |
+| `blobContainerNames` | array | no | Private blob containers to create |
+| `deleteBlobsAfterDays` | int | no | Lifecycle deletion of blobs in those containers after N days since last modification; `0` (default) disables it |
 
 ## Outputs
 

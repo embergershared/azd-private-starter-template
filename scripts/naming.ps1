@@ -1,15 +1,44 @@
 function Get-SubscriptionCode {
     param(
         [Parameter(Mandatory)]
+        [string] $SubscriptionName,
+
+        # Fallback source for subscriptions whose display name carries no code.
+        [string] $SubscriptionId = ''
+    )
+
+    $code = Get-SubscriptionNameCode -SubscriptionName $SubscriptionName
+    if ($code) {
+        return $code
+    }
+
+    # Any tenant/subscription: derive a stable 5-character code from the subscription GUID.
+    $parsedId = [Guid]::Empty
+    if ([Guid]::TryParse($SubscriptionId, [ref] $parsedId)) {
+        return "s$($parsedId.ToString('N').Substring(0, 4))"
+    }
+
+    throw "Subscription display name '$SubscriptionName' must end with a hyphen-delimited 1-4 digit token, such as '-1', contain an 's<N>' token, such as 'Contoso-s2-Projects', or a subscription ID must be supplied."
+}
+
+# The code a display name carries: a '-<N>' suffix ('Demo-3' => s3) or a delimited
+# 's<N>' token ('MngEnv567410-s2-Projects' => s2). Returns '' when there is none.
+function Get-SubscriptionNameCode {
+    param(
+        [Parameter(Mandatory)]
         [string] $SubscriptionName
     )
 
-    $match = [regex]::Match($SubscriptionName.Trim(), '-(?<number>[0-9]{1,4})$')
+    $name = $SubscriptionName.Trim()
+    $match = [regex]::Match($name, '-(?<number>[0-9]{1,4})$')
     if (-not $match.Success) {
-        throw "Subscription display name '$SubscriptionName' must end with a hyphen-delimited 1-4 digit token, such as '-1'."
+        $match = [regex]::Match($name, '(?i)(?:^|[-_ ])s(?<number>[0-9]{1,4})(?:[-_ ]|$)')
+    }
+    if ($match.Success) {
+        return "s$($match.Groups['number'].Value)"
     }
 
-    return "s$($match.Groups['number'].Value)"
+    return ''
 }
 
 function Assert-SubscriptionCode {
@@ -18,10 +47,18 @@ function Assert-SubscriptionCode {
         [string] $SubscriptionName,
 
         [Parameter(Mandatory)]
-        [string] $CachedCode
+        [string] $CachedCode,
+
+        [string] $SubscriptionId = ''
     )
 
-    $derivedCode = Get-SubscriptionCode -SubscriptionName $SubscriptionName
+    # Names carrying no code accept an explicitly chosen one (azd env set AZURE_SUBSCRIPTION_CODE s1).
+    if (-not (Get-SubscriptionNameCode -SubscriptionName $SubscriptionName) -and
+        $CachedCode.Trim() -cmatch '^s[0-9a-z]{1,4}$') {
+        return $CachedCode.Trim()
+    }
+
+    $derivedCode = Get-SubscriptionCode -SubscriptionName $SubscriptionName -SubscriptionId $SubscriptionId
     if ($CachedCode.Trim() -cne $derivedCode) {
         throw "Cached subscription code '$($CachedCode.Trim())' does not match '$derivedCode' derived from subscription '$SubscriptionName'."
     }
@@ -54,6 +91,37 @@ function Get-LocationCode {
     $code = [string] $catalog[$canonicalLocation]
     if ($code -cnotmatch '^[a-z]{2}[a-z0-9]{0,3}$') {
         throw "Azure location '$canonicalLocation' has invalid code '$code'; codes must be 2-5 lowercase alphanumeric characters and start with two letters."
+    }
+
+    return $code
+}
+
+function Get-TenantCode {
+    param(
+        [Parameter(Mandatory)]
+        [string] $TenantId,
+
+        [Parameter(Mandatory)]
+        [string] $CatalogPath
+    )
+
+    try {
+        $catalog = Get-Content -LiteralPath $CatalogPath -Raw |
+            ConvertFrom-Json -AsHashtable -ErrorAction Stop
+    }
+    catch {
+        throw "Unable to load the tenant-code catalog '$CatalogPath': $($_.Exception.Message)"
+    }
+
+    $canonicalTenant = $TenantId.Trim().ToLowerInvariant()
+    if (-not $catalog.ContainsKey($canonicalTenant)) {
+        throw "Tenant '$TenantId' has no approved code in '$CatalogPath'. Add it as `"<tenant-id>`": { `"name`": `"<display name>`", `"code`": `"<code>`" }."
+    }
+
+    # Names are lowercase; an empty code keeps the pre-tenant names for that tenant.
+    $code = ([string] $catalog[$canonicalTenant].code).ToLowerInvariant()
+    if ($code -cnotmatch '^([a-z0-9]{2,12})?$') {
+        throw "Tenant '$canonicalTenant' has invalid code '$code'; codes must be empty or 2-12 lowercase alphanumeric characters."
     }
 
     return $code
@@ -121,18 +189,24 @@ function Get-NormalizedEnvironment {
 function Get-BaseName {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $TenantCode,
         [Parameter(Mandatory)] [string] $LocationCode,
         [Parameter(Mandatory)] [string] $SubscriptionCode,
         [Parameter(Mandatory)] [string] $EnvironmentName
     )
 
-    return "$LocationCode-$SubscriptionCode-$EnvironmentName"
+    if ([string]::IsNullOrEmpty($TenantCode)) {
+        return "$LocationCode-$SubscriptionCode-$EnvironmentName"
+    }
+
+    return "$TenantCode-$LocationCode-$SubscriptionCode-$EnvironmentName"
 }
 
 function Get-AzName {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] [string] $Abbreviation,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $TenantCode,
         [Parameter(Mandatory)] [string] $LocationCode,
         [Parameter(Mandatory)] [string] $SubscriptionCode,
         [Parameter(Mandatory)] [string] $EnvironmentName,
@@ -141,7 +215,7 @@ function Get-AzName {
         [string] $Suffix = ''
     )
 
-    $body = Get-BaseName -LocationCode $LocationCode `
+    $body = Get-BaseName -TenantCode $TenantCode -LocationCode $LocationCode `
         -SubscriptionCode $SubscriptionCode -EnvironmentName $EnvironmentName
 
     if ([string]::IsNullOrEmpty($Suffix)) {
@@ -189,6 +263,21 @@ function Get-ShortName {
     $trimmed = $environment.Substring(0, [Math]::Min($allowance, $environment.Length))
 
     return "$Prefix-$trimmed-$ShortHash"
+}
+
+function Get-ManagedResourceGroupName {
+    <#
+    .SYNOPSIS
+        Mirrors managedResourceGroupName in infra/core/naming.bicep: the owning
+        resource group name plus '-managed', for every platform-managed resource
+        group (Container Apps infrastructure, AKS node resource group, ...).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $ResourceGroupName
+    )
+
+    return "$ResourceGroupName-managed"
 }
 
 function Get-CommonTags {

@@ -51,8 +51,9 @@ validation gate and deployment approval are complete.
 Run `set-deployment-tags.ps1` once after creating an environment. AZD resolves
 required Bicep inputs before `preprovision` hooks run; the script seeds those
 first-use values, including the stable subscription code, and the hook refreshes
-update metadata on later provisions. The active subscription display name must
-end in a hyphen-delimited 1-4 digit token, such as `-1`.
+update metadata on later provisions. The subscription code comes from a final
+`-<N>` display-name token (`-1` gives `s1`), a delimited `s<N>` token
+(`MngEnv567410-s2-Projects` gives `s2`), or the subscription ID.
 
 ## Deployment profiles
 
@@ -100,6 +101,7 @@ The conventions layer ships with every profile, including `core`:
 | `infra/core/tags.bicep` | The exported common-tag function |
 | `infra/core/private-endpoint.bicep` | The one private endpoint and DNS pattern every module uses |
 | `infra/core/abbreviations.json` | Approved Cloud Adoption Framework resource abbreviations |
+| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
 | `scripts/preflight.ps1` | Fail-closed validation before any deployment |

@@ -61,14 +61,14 @@ $subscriptionName = & az account show --subscription $subscriptionId `
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($subscriptionName)) {
     throw "Unable to read the display name for subscription '$subscriptionId'."
 }
-$derivedSubscriptionCode = Get-SubscriptionCode -SubscriptionName $subscriptionName
+$derivedSubscriptionCode = Get-SubscriptionCode -SubscriptionName $subscriptionName -SubscriptionId $subscriptionId
 $cachedSubscriptionCode = (& azd env get-value AZURE_SUBSCRIPTION_CODE 2>$null)
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($cachedSubscriptionCode)) {
     Invoke-Azd -Arguments @('env', 'set', 'AZURE_SUBSCRIPTION_CODE', $derivedSubscriptionCode)
 }
 elseif ($cachedSubscriptionCode.Trim() -cne $derivedSubscriptionCode) {
     $null = Assert-SubscriptionCode -SubscriptionName $subscriptionName `
-        -CachedCode $cachedSubscriptionCode
+        -CachedCode $cachedSubscriptionCode -SubscriptionId $subscriptionId
 }
 
 $timeZone = [TimeZoneInfo]::FindSystemTimeZoneById(

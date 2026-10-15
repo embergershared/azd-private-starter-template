@@ -3,6 +3,42 @@
   "generator": "scripts/build-catalog.ps1",
   "modules": [
     {
+      "name": "ai-foundry",
+      "displayName": "Ai Foundry",
+      "description": "Microsoft Foundry (AIServices) account with local auth disabled, a Foundry project and serialized model deployments.",
+      "kind": "resource",
+      "abbreviation": "aif",
+      "additionalAbbreviations": [
+        "proj"
+      ],
+      "featureFlag": "aiFoundry",
+      "profiles": [
+        "core",
+        "full",
+        "private"
+      ],
+      "providers": [
+        "Microsoft.CognitiveServices"
+      ],
+      "nameRule": "global",
+      "path": "infra/modules/ai-foundry/main.bicep",
+      "privateEndpoints": [],
+      "roles": [
+        {
+          "name": "Cognitive Services OpenAI User",
+          "id": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
+        },
+        {
+          "name": "Azure AI User",
+          "id": "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+        }
+      ],
+      "preflight": {
+        "checks": [],
+        "requiresOperatorPrincipals": false
+      }
+    },
+    {
       "name": "bastion",
       "displayName": "Azure Bastion",
       "description": "Standard SKU Azure Bastion with native client tunneling, providing browser and RDP/SSH access to jumpboxes without public IP addresses on the virtual machines.",
@@ -20,6 +56,62 @@
       "path": "infra/modules/bastion/main.bicep",
       "privateEndpoints": [],
       "roles": [],
+      "preflight": {
+        "checks": [],
+        "requiresOperatorPrincipals": false
+      }
+    },
+    {
+      "name": "container-apps-environment",
+      "displayName": "Container Apps Environment",
+      "description": "VNet-integrated workload-profiles Container Apps environment with Log Analytics logging and a named infrastructure resource group.",
+      "kind": "resource",
+      "abbreviation": "cae",
+      "additionalAbbreviations": [],
+      "featureFlag": "containerAppsEnvironment",
+      "profiles": [
+        "core",
+        "full",
+        "private"
+      ],
+      "providers": [
+        "Microsoft.App",
+        "Microsoft.OperationalInsights"
+      ],
+      "nameRule": "regional",
+      "path": "infra/modules/container-apps-environment/main.bicep",
+      "privateEndpoints": [],
+      "roles": [],
+      "preflight": {
+        "checks": [],
+        "requiresOperatorPrincipals": false
+      }
+    },
+    {
+      "name": "container-registry",
+      "displayName": "Container Registry",
+      "description": "Azure Container Registry with admin user and anonymous pull disabled; images are pulled with managed identity.",
+      "kind": "resource",
+      "abbreviation": "cr",
+      "additionalAbbreviations": [],
+      "featureFlag": "containerRegistry",
+      "profiles": [
+        "core",
+        "full",
+        "private"
+      ],
+      "providers": [
+        "Microsoft.ContainerRegistry"
+      ],
+      "nameRule": "globalCompact",
+      "path": "infra/modules/container-registry/main.bicep",
+      "privateEndpoints": [],
+      "roles": [
+        {
+          "name": "AcrPull",
+          "id": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+        }
+      ],
       "preflight": {
         "checks": [],
         "requiresOperatorPrincipals": false
@@ -95,6 +187,61 @@
         {
           "name": "Key Vault Secrets User",
           "id": "4633458b-17de-408a-b874-0445c86b69e6"
+        }
+      ],
+      "preflight": {
+        "checks": [],
+        "requiresOperatorPrincipals": false
+      }
+    },
+    {
+      "name": "managed-identity",
+      "displayName": "Managed Identity",
+      "description": "User-assigned managed identity for workloads to reach Azure services without secrets.",
+      "kind": "resource",
+      "abbreviation": "id",
+      "additionalAbbreviations": [],
+      "featureFlag": "managedIdentity",
+      "profiles": [
+        "core",
+        "full",
+        "private"
+      ],
+      "providers": [
+        "Microsoft.ManagedIdentity"
+      ],
+      "nameRule": "regional",
+      "path": "infra/modules/managed-identity/main.bicep",
+      "privateEndpoints": [],
+      "roles": [],
+      "preflight": {
+        "checks": [],
+        "requiresOperatorPrincipals": false
+      }
+    },
+    {
+      "name": "maps",
+      "displayName": "Maps",
+      "description": "Azure Maps Gen2 account for search and routing, accessed with Microsoft Entra ID.",
+      "kind": "resource",
+      "abbreviation": "map",
+      "additionalAbbreviations": [],
+      "featureFlag": "maps",
+      "profiles": [
+        "core",
+        "full",
+        "private"
+      ],
+      "providers": [
+        "Microsoft.Maps"
+      ],
+      "nameRule": "regional",
+      "path": "infra/modules/maps/main.bicep",
+      "privateEndpoints": [],
+      "roles": [
+        {
+          "name": "Azure Maps Data Reader",
+          "id": "423170ca-a8f6-4b0f-8487-9e4eb8f49bfa"
         }
       ],
       "preflight": {
