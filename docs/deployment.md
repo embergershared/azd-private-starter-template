@@ -28,7 +28,7 @@ The deployment identity needs:
 
   The subscription code comes from the display name's final hyphen-delimited
   1-4 digit token (`-3` gives `s3`) or a delimited `s<N>` token
-  (`MngEnv100001-s2-Projects` gives `s2`), falling back to the subscription ID.
+  (`MngEnv100001-s2-Sandbox` gives `s2`), falling back to the subscription ID.
   The initialization helper caches it for resource naming, and preflight blocks
   if a later subscription rename would change it.
 
@@ -85,10 +85,10 @@ intentional and licensed for the target tenant.
    Azure.
 
 ```powershell
-azd auth login
-azd env new <environment>
-azd env set AZURE_SUBSCRIPTION_ID <subscription-guid>
-azd env set AZURE_LOCATION eastus2
+az login --tenant <tenant-guid>
+az account set --subscription <subscription-guid>
+azd auth login --tenant-id <tenant-guid>
+azd env new <environment> --subscription <subscription-guid> --location eastus2
 azd env set DEPLOYMENT_PROFILE core
 # Only when the profile or an override enables a VM or role assignments:
 azd env set AZURE_OPERATOR_PRINCIPAL_IDS <entra-object-guid>
@@ -99,6 +99,54 @@ The final command is a required one-time bootstrap for each new environment.
 It initializes the stable subscription code and lifecycle values. AZD resolves
 required Bicep parameters before running pre-provision hooks; later provisions
 verify the code and refresh update metadata automatically.
+
+If `AZURE_SUBSCRIPTION_ID` is not set, the bootstrap uses the subscription the
+Azure CLI is signed in to. The bootstrap and preflight both fail when the Azure
+CLI and `azd` target different subscriptions.
+
+### Deploy to another tenant or subscription
+
+The default target is tenant `00000000-0000-4000-8000-000000000001`
+(code `100001`) and subscription `MngEnv100001-s2-Sandbox`. The tenant catalog
+approves these tenants:
+
+| Tenant | Tenant ID | Code | Subscriptions |
+|---|---|---|---|
+| Contoso | `00000000-0000-4000-8000-000000000001` | `100001` | `MngEnv100001-s1-Hub`, `MngEnv100001-s2-Sandbox` (default), `MngEnv100001-s3-Projects` |
+| Fabrikam | `00000000-0000-4000-8000-000000000002` | `200002` | `Fabrikam-200002-s1` (`00000000-0000-4000-8000-000000000004`, code `s1`) |
+
+Nothing in the template is tied to them. To target another one:
+
+1. **Approve the tenant.** Add it to `infra/core/tenant-codes.json` before its
+   first deployment, as described in
+   [resource naming](configuration.md#resource-naming). Preflight and Bicep
+   both fail closed for an unlisted tenant. Use an empty code only when the
+   tenant's resources must keep names without a tenant segment.
+2. **Sign both CLIs in to that tenant.** The Azure CLI and `azd` keep separate
+   logins, and the scripts check that they agree:
+
+   ```powershell
+   az login --tenant <tenant-guid>
+   az account set --subscription <subscription-guid>
+   azd auth login --tenant-id <tenant-guid>
+   ```
+
+3. **Use a new environment per subscription.** Names, the cached subscription
+   code and the lifecycle tags belong to one subscription, so do not repoint an
+   existing environment:
+
+   ```powershell
+   azd env new <environment> --subscription <subscription-guid> --location <region>
+   .\scripts\set-deployment-tags.ps1
+   ```
+
+4. **Check the subscription code.** Display names such as
+   `MngEnv100001-s3-Projects` give `s3`. A name without a `-<N>` suffix or an
+   `s<N>` token, such as `Pay as you go`, falls back to `s` plus the first four
+   hex characters of the subscription ID; choose a readable one before the
+   first provision with `azd env set AZURE_SUBSCRIPTION_CODE s1`.
+5. **Register providers and check quota** in the new subscription. Preflight
+   reports unregistered providers but never registers them.
 
 ## 2. Validate
 

@@ -20,19 +20,18 @@ it needs a desktop inside that VNet.
 
 ```powershell
 # Variables values
-$subscriptionId = '<subscription-guid>'
+$tenantId = '00000000-0000-4000-8000-000000000001' # must be listed in infra/core/tenant-codes.json
+$subscriptionId = '00000000-0000-4000-8000-000000000003' # MngEnv100001-s2-Sandbox
 # Use a lowercase, unique 2-32 character environment name.
 $environment = 'my-azd-env-dev'
 $location = 'eastus2'
 $deploymentProfile = 'core' # core, private, or full
 
 # Commands execution
-az login
+az login --tenant $tenantId
 az account set --subscription $subscriptionId
-azd auth login
-azd env new $environment
-azd env set AZURE_SUBSCRIPTION_ID $subscriptionId
-azd env set AZURE_LOCATION $location
+azd auth login --tenant-id $tenantId
+azd env new $environment --subscription $subscriptionId --location $location
 azd env set DEPLOYMENT_PROFILE $deploymentProfile
 .\scripts\set-deployment-tags.ps1
 azd provision --preview -e $environment
@@ -51,9 +50,13 @@ validation gate and deployment approval are complete.
 Run `set-deployment-tags.ps1` once after creating an environment. AZD resolves
 required Bicep inputs before `preprovision` hooks run; the script seeds those
 first-use values, including the stable subscription code, and the hook refreshes
-update metadata on later provisions. The subscription code comes from a final
-`-<N>` display-name token (`-1` gives `s1`), a delimited `s<N>` token
-(`MngEnv100001-s2-Projects` gives `s2`), or the subscription ID.
+update metadata on later provisions. When `AZURE_SUBSCRIPTION_ID` is not set,
+the script uses the subscription the Azure CLI is signed in to, and both scripts
+fail if the Azure CLI and `azd` target different subscriptions. The subscription
+code comes from a final `-<N>` display-name token (`-1` gives `s1`), a delimited
+`s<N>` token (`MngEnv100001-s2-Sandbox` gives `s2`), or the subscription ID. To
+target another tenant or subscription, see
+[Deploy to another tenant or subscription](docs/deployment.md#deploy-to-another-tenant-or-subscription).
 
 ## Deployment profiles
 

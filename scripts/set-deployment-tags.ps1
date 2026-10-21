@@ -16,20 +16,6 @@ function Invoke-Azd {
     }
 }
 
-function Get-RequiredEnvironmentValue {
-    param(
-        [Parameter(Mandatory)]
-        [string] $Name
-    )
-
-    $value = & azd env get-value $Name 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($value)) {
-        throw "Required azd environment value '$Name' is not set."
-    }
-
-    return $value.Trim()
-}
-
 foreach ($command in @('az', 'azd')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "Required command '$command' was not found."
@@ -55,7 +41,20 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repository)) {
     Invoke-Azd -Arguments @('env', 'set', 'AZURE_REPOSITORY', $repository)
 }
 
-$subscriptionId = Get-RequiredEnvironmentValue -Name 'AZURE_SUBSCRIPTION_ID'
+# A new environment targets the subscription the Azure CLI is signed in to, so
+# deploying to another tenant or subscription is just az login / az account set.
+$subscriptionId = (& azd env get-value AZURE_SUBSCRIPTION_ID 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($subscriptionId)) {
+    $subscriptionId = Get-ActiveSubscriptionId
+    if (-not $subscriptionId) {
+        throw 'Unable to determine AZURE_SUBSCRIPTION_ID. Run az login and az account set --subscription <id>, or azd env set AZURE_SUBSCRIPTION_ID <id>.'
+    }
+    Invoke-Azd -Arguments @('env', 'set', 'AZURE_SUBSCRIPTION_ID', $subscriptionId)
+    Write-Output "Initialized AZURE_SUBSCRIPTION_ID to $subscriptionId (source: active Azure CLI subscription)."
+}
+$subscriptionId = $subscriptionId.Trim()
+Assert-DeploymentSubscription -SubscriptionId $subscriptionId
+
 $subscriptionName = & az account show --subscription $subscriptionId `
     --query name --output tsv --only-show-errors
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($subscriptionName)) {

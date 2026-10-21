@@ -178,6 +178,8 @@ Test-Case 'the tenant-code catalog is valid and agrees with Bicep tenantCodeFor'
 
     Assert-Equal (Get-TenantCode -TenantId '00000000-0000-4000-8000-000000000001' -CatalogPath $tenantCodesPath) '100001' `
         'Contoso tenant code mismatch.'
+    Assert-Equal (Get-TenantCode -TenantId '00000000-0000-4000-8000-000000000002' -CatalogPath $tenantCodesPath) '200002' `
+        'Fabrikam tenant code mismatch.'
     Assert-Throws { Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $tenantCodesPath } `
         'Unknown tenants must fail.'
 }
@@ -258,7 +260,8 @@ Test-Case 'Get-LocationCode agrees with the Bicep locationCodeFor function' {
 Test-Case 'subscription codes derive and remain stable' {
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'ME-MngEnvMCAP300003-emberger-1') 's1' 'One-digit subscription code mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'example-1234') 's1234' 'Four-digit subscription code mismatch.'
-    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Projects') 's2' 'Delimited s<N> token mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Sandbox') 's2' 'Delimited s<N> token mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Fabrikam-200002-s1') 's1' 'Final s<N> token mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Contoso_S12 Projects') 's12' 's<N> token delimiters mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Demo-s2-Projects-3') 's3' 'Numeric suffix must win over an s<N> token.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'Projects2-Dev' } 'Undelimited token must not derive a code.'
@@ -269,8 +272,8 @@ Test-Case 'subscription codes derive and remain stable' {
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example-12345' } 'Five-digit subscription token must fail.'
     Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'example-3' -CachedCode 's3') 's3' 'Cached subscription code mismatch.'
     Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'example-3' -CachedCode 's1' } 'Subscription code drift must fail.'
-    Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Projects' -CachedCode 's2') 's2' 's<N> cached code mismatch.'
-    Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Projects' -CachedCode 's1' } 's<N> code drift must fail.'
+    Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Sandbox' -CachedCode 's2') 's2' 's<N> cached code mismatch.'
+    Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Sandbox' -CachedCode 's1' } 's<N> code drift must fail.'
     Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'Contoso Projects' -CachedCode 's7') 's7' `
         'Explicit code must be accepted for a name without a code.'
 }
