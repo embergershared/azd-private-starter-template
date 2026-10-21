@@ -58,9 +58,8 @@ project opts into. `core/private-endpoint.bicep` is simply never invoked.
 
 `private` adds the network, private DNS, and a private Key Vault and Storage
 account. `full` adds both VMs, Bastion, NAT, Entra login extensions, RBAC
-assignments, and shutdown schedules. `minimal` is a deprecated alias for
-`private`. See [configuration](configuration.md) for the feature dependency
-rules.
+assignments, and shutdown schedules. See [configuration](configuration.md) for
+the feature dependency rules.
 
 The profile ladder is proven rather than asserted: `tests/bicep.tests.ps1`
 evaluates the compiled ARM template for each profile and fails if `core` ever

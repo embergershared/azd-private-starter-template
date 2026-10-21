@@ -1,5 +1,12 @@
 [CmdletBinding()]
-param()
+param(
+    # Registers the resource providers the enabled modules need instead of
+    # failing on them. The preprovision hook never passes it, so
+    # `azd provision --preview` stays read-only; run
+    # ./scripts/preflight.ps1 -RegisterProviders yourself when preflight
+    # reports an unregistered provider.
+    [switch] $RegisterProviders
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -34,6 +41,24 @@ function Get-RequiredEnvironmentValue {
     return $value.Trim()
 }
 
+function Get-ProviderRegistrationState {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Namespace,
+
+        [Parameter(Mandatory)]
+        [string] $SubscriptionId
+    )
+
+    $state = & az provider show --namespace $Namespace --subscription $SubscriptionId `
+        --query registrationState --output tsv --only-show-errors
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect provider '$Namespace'."
+    }
+
+    return [string] $state
+}
+
 foreach ($command in @('az', 'azd')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "Required command '$command' was not found."
@@ -54,21 +79,12 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($deploymentProfile)) {
 }
 $deploymentProfile = $deploymentProfile.Trim()
 
-# 'minimal' was the pre-0.2.0 name for 'private'. It is still accepted so an
-# environment provisioned before the three-rung ladder keeps deploying, but it
-# is reported so the value can be migrated.
-$resolvedProfile = $deploymentProfile
-if ($deploymentProfile -eq 'minimal') {
-    $resolvedProfile = 'private'
-    Write-Warning "DEPLOYMENT_PROFILE 'minimal' is deprecated and now maps to 'private'. Run: azd env set DEPLOYMENT_PROFILE private"
+if ($deploymentProfile -notin $knownProfiles) {
+    throw "DEPLOYMENT_PROFILE must be one of: $($knownProfiles -join ', '); received '$deploymentProfile'. Set a supported value, for example: azd env set DEPLOYMENT_PROFILE private"
 }
 
-if ($resolvedProfile -notin $knownProfiles) {
-    throw "DEPLOYMENT_PROFILE must be one of: $($knownProfiles -join ', '); received '$deploymentProfile'."
-}
-
-$isPrivateOrHigher = $resolvedProfile -ne 'core'
-$isFull = $resolvedProfile -eq 'full'
+$isPrivateOrHigher = $deploymentProfile -ne 'core'
+$isFull = $deploymentProfile -eq 'full'
 
 # ---------------------------------------------------------------------------
 # Feature resolution - mirrors the featureSettings block of infra/main.bicep
@@ -156,8 +172,8 @@ $moduleEnabled = @{
 $enabledModules = @(Get-EnabledCatalogModules -Modules $catalog.modules -Features $featureSettings -Composition $moduleEnabled)
 foreach ($module in $enabledModules) {
     $name = [string] $module['name']
-    if ($module['profiles'] -notcontains $resolvedProfile) {
-        Write-Warning "Module '$name' is enabled by an override but is not part of the '$resolvedProfile' profile."
+    if ($module['profiles'] -notcontains $deploymentProfile) {
+        Write-Warning "Module '$name' is enabled by an override but is not part of the '$deploymentProfile' profile."
     }
 
 }
@@ -222,19 +238,48 @@ if (-not $featureSettings.shutdownSchedules) {
     $null = $providers.Remove('Microsoft.DevTestLab')
 }
 
-$unregisteredProviders = foreach ($provider in $providers) {
-    $state = & az provider show --namespace $provider --subscription $subscriptionId `
-        --query registrationState --output tsv --only-show-errors
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to inspect provider '$provider'."
+$providerStates = [ordered] @{}
+foreach ($provider in $providers) {
+    $providerStates[$provider] = Get-ProviderRegistrationState -Namespace $provider -SubscriptionId $subscriptionId
+}
+$unregisteredProviders = @($providerStates.Keys | Where-Object { $providerStates[$_] -ne 'Registered' })
+
+if ($unregisteredProviders.Count -gt 0 -and $RegisterProviders) {
+    # Opt-in only. Registration is a subscription-wide change, so the hook never
+    # does it on its own; an operator who passes -RegisterProviders has asked
+    # for exactly this.
+    foreach ($provider in $unregisteredProviders) {
+        Write-Output "Registering provider '$provider' in subscription $subscriptionId (was '$($providerStates[$provider])')..."
+        & az provider register --namespace $provider --subscription $subscriptionId --wait --only-show-errors
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to register provider '$provider'. Registration needs Microsoft.Resources/subscriptions/providers/register/action on the subscription; ask someone who has it to run: az provider register --namespace $provider --subscription $subscriptionId --wait"
+        }
+        $providerStates[$provider] = Get-ProviderRegistrationState -Namespace $provider -SubscriptionId $subscriptionId
+        if ($providerStates[$provider] -ne 'Registered') {
+            throw "Provider '$provider' is still '$($providerStates[$provider])' after registration. Wait for it to finish, then re-run preflight."
+        }
+        Write-Output "Registered provider '$provider'."
     }
-    if ($state -ne 'Registered') {
-        $provider
-    }
+    $unregisteredProviders = @()
 }
 
-if (@($unregisteredProviders).Count -gt 0) {
-    throw "Register these Azure providers before provisioning: $($unregisteredProviders -join ', ')."
+if ($unregisteredProviders.Count -gt 0) {
+    # Microsoft.DevTestLab is the usual offender: it backs the full profile's
+    # auto-shutdown schedules and is rarely registered until something needs it.
+    $missing = @($unregisteredProviders | Where-Object { $providerStates[$_] -ne 'Registering' })
+    $pending = @($unregisteredProviders | Where-Object { $providerStates[$_] -eq 'Registering' })
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if ($missing.Count -gt 0) {
+        $lines.Add("Register these Azure providers before provisioning: $($missing -join ', ').")
+        $lines.Add('Run ./scripts/preflight.ps1 -RegisterProviders, or register them yourself and re-run preflight:')
+        foreach ($provider in $missing) {
+            $lines.Add("  az provider register --namespace $provider --subscription $subscriptionId --wait")
+        }
+    }
+    if ($pending.Count -gt 0) {
+        $lines.Add("Registration is still in progress for: $($pending -join ', '). Wait for it to finish, then re-run preflight.")
+    }
+    throw ($lines -join [Environment]::NewLine)
 }
 
 # ---------------------------------------------------------------------------
@@ -347,6 +392,6 @@ if ($requestedChecks.Contains('vcpuQuota')) {
 }
 
 $moduleList = ($enabledModules | ForEach-Object { $_['name'] }) -join ', '
-Write-Output "Preflight passed for environment '$environmentName' using profile '$resolvedProfile' in '$location' ($locationCode), tenant code '$tenantCode' and subscription code '$cachedSubscriptionCode'."
+Write-Output "Preflight passed for environment '$environmentName' using profile '$deploymentProfile' in '$location' ($locationCode), tenant code '$tenantCode' and subscription code '$cachedSubscriptionCode'."
 Write-Output "Modules: $moduleList"
 Write-Output "Providers verified: $($providers -join ', ')"

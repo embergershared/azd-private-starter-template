@@ -179,12 +179,13 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
 }
 
 $hookScenarios = @(
-    foreach ($profile in @('', 'private', 'minimal', 'full')) {
+    foreach ($profile in @('', 'private', 'full')) {
         @{ Name = "azd profile '$profile'"; Profile = $profile; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '11111111-1111-1111-1111-111111111111' }
     }
     @{ Name = 'the subscription taken from the Azure CLI'; Profile = ''; SubscriptionId = $null; Active = '11111111-1111-1111-1111-111111111111' }
     @{ Name = 'an Azure CLI on another subscription'; Profile = ''; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '33333333-3333-3333-3333-333333333333'; Fails = 'differs from AZURE_SUBSCRIPTION_ID' }
     @{ Name = 'no Azure CLI login'; Profile = ''; SubscriptionId = $null; Active = ''; Fails = 'Unable to determine AZURE_SUBSCRIPTION_ID' }
+    @{ Name = "the retired azd profile 'minimal'"; Profile = 'minimal'; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '11111111-1111-1111-1111-111111111111'; Fails = "received 'minimal'.*azd env set DEPLOYMENT_PROFILE private"; Reason = 'The retired minimal profile must be rejected with guidance to switch to private.' }
 )
 foreach ($scenario in $hookScenarios) {
     Test-Case "adopted hook executes copied dependencies with $($scenario.Name)" {
@@ -243,7 +244,8 @@ foreach ($scenario in $hookScenarios) {
                     $message = ''
                     try { & ([scriptblock]::Create($body)) | Out-Null }
                     catch { $message = $_.Exception.Message }
-                    Assert-Match -Actual $message -Pattern $scenario.Fails -Message 'The hook must stop before deploying to an unconfirmed subscription.'
+                    $reason = if ($scenario.ContainsKey('Reason')) { $scenario.Reason } else { 'The hook must stop before deploying to an unconfirmed subscription.' }
+                    Assert-Match -Actual $message -Pattern $scenario.Fails -Message $reason
                     return
                 }
                 $execution = (& ([scriptblock]::Create($body))) -join "`n"
@@ -251,12 +253,240 @@ foreach ($scenario in $hookScenarios) {
             catch { throw "$($_.Exception.Message)`n$($_.ScriptStackTrace)" }
             finally { Pop-Location }
             Assert-Equal -Actual $values.AZURE_SUBSCRIPTION_ID -Expected $scenario.Active -Message 'The environment must target the Azure CLI subscription.'
-            $expected = if (-not $profile) { 'core' } elseif ($profile -eq 'minimal') { 'private' } else { $profile }
+            $expected = if ($profile) { $profile } else { 'core' }
             Assert-Match -Actual $execution -Pattern "using profile '$expected'" -Message 'Real copied scripts must resolve the persisted profile.'
             Assert-Equal -Actual $values.DEPLOYMENT_PROFILE -Expected $(if ($profile) { $profile } else { 'core' }) -Message 'Only missing profile may be initialized.'
         }
         finally { Remove-Item -LiteralPath $root -Recurse -Force }
     }
+}
+
+# Runs the fixture's own preflight.ps1 for the full profile against mocked
+# Azure CLIs, with a caller-supplied provider registration table. The mocks
+# record every `az provider register` call so a test can prove the default
+# path never writes to the subscription.
+function Invoke-FixturePreflight {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [hashtable] $MockProviderStates,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]] $MockRegisterCalls,
+        [string] $FeatureOverrides = '{}',
+        [switch] $RegisterProviders
+    )
+
+    $fixtureSubscriptionId = '11111111-1111-1111-1111-111111111111'
+    $fixtureTenantId = @((Get-Content -LiteralPath (Join-Path $Root 'infra/core/tenant-codes.json') -Raw |
+                ConvertFrom-Json -AsHashtable).Keys)[0]
+    $fixtureValues = @{
+        DEPLOYMENT_PROFILE = 'full'; AZURE_SUBSCRIPTION_ID = $fixtureSubscriptionId
+        AZURE_SUBSCRIPTION_CODE = 's1'; AZURE_LOCATION = 'eastus'; AZURE_ENV_NAME = 'fixture'
+        AZURE_FEATURE_OVERRIDES_JSON = $FeatureOverrides
+        AZURE_OPERATOR_PRINCIPAL_IDS = '22222222-2222-2222-2222-222222222222'
+    }
+    function azd {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -eq 'env' -and $args[1] -eq 'get-value') {
+            if ($fixtureValues.ContainsKey($args[2])) { return $fixtureValues[$args[2]] }
+            $global:LASTEXITCODE = 1
+            return
+        }
+        throw "Unexpected azd call: $args"
+    }
+    function az {
+        $global:LASTEXITCODE = 0
+        switch ("$($args[0]) $($args[1])") {
+            'account show' {
+                if ($args -contains 'id') { return $fixtureSubscriptionId }
+                return (@{ name = 'fixture-1'; state = 'Enabled'; tenantId = $fixtureTenantId } | ConvertTo-Json -Compress)
+            }
+            'account list-locations' { return '["eastus"]' }
+            'provider show' {
+                $namespace = [string] $args[[array]::IndexOf($args, '--namespace') + 1]
+                if ($MockProviderStates.ContainsKey($namespace)) { return $MockProviderStates[$namespace] }
+                return 'Registered'
+            }
+            'provider register' {
+                $namespace = [string] $args[[array]::IndexOf($args, '--namespace') + 1]
+                $MockRegisterCalls.Add(($args -join ' '))
+                $MockProviderStates[$namespace] = 'Registered'
+                return
+            }
+            'vm list-skus' { return '[{"restrictions":[]}]' }
+            'vm image' { return '{}' }
+            'vm list-usage' { return '[{"localName":"Total Regional vCPUs","limit":100,"currentValue":0}]' }
+            default { throw "Unexpected Azure call: $args" }
+        }
+    }
+
+    Push-Location $Root
+    try {
+        return ((& (Join-Path $Root 'scripts/preflight.ps1') -RegisterProviders:$RegisterProviders) -join "`n")
+    }
+    finally { Pop-Location }
+}
+
+foreach ($scenario in @(
+        @{
+            Name   = 'names an unregistered provider and the command that registers it'; State = 'NotRegistered'
+            Expect = @(
+                'Register these Azure providers before provisioning: Microsoft\.DevTestLab\.',
+                'Run \./scripts/preflight\.ps1 -RegisterProviders',
+                'az provider register --namespace Microsoft\.DevTestLab --subscription 11111111-1111-1111-1111-111111111111 --wait'
+            )
+        }
+        @{
+            Name   = 'tells a registration still in progress apart from a missing one'; State = 'Registering'
+            Expect = @('Registration is still in progress for: Microsoft\.DevTestLab\.'); Reject = 'az provider register'
+        }
+    )) {
+    Test-Case "preflight $($scenario.Name)" {
+        $root = New-ToolingFixture
+        try {
+            $states = @{ 'Microsoft.DevTestLab' = $scenario.State }
+            $registerCalls = [System.Collections.Generic.List[string]]::new()
+            $message = ''
+            try { Invoke-FixturePreflight -Root $root -MockProviderStates $states -MockRegisterCalls $registerCalls | Out-Null }
+            catch { $message = $_.Exception.Message }
+            foreach ($pattern in $scenario.Expect) {
+                Assert-Match -Actual $message -Pattern $pattern -Message 'The failure must tell the operator exactly what to run.'
+            }
+            if ($scenario.ContainsKey('Reject')) {
+                Assert-NotMatch -Actual $message -Pattern $scenario.Reject -Message 'A provider that is already registering must not be told to register again.'
+            }
+            Assert-Equal -Actual $registerCalls.Count -Expected 0 -Message 'Preflight without -RegisterProviders must never change the subscription.'
+        }
+        finally { Remove-Item -LiteralPath $root -Recurse -Force }
+    }
+}
+
+Test-Case 'preflight -RegisterProviders registers the missing provider and then passes' {
+    $root = New-ToolingFixture
+    try {
+        $states = @{ 'Microsoft.DevTestLab' = 'NotRegistered' }
+        $registerCalls = [System.Collections.Generic.List[string]]::new()
+        $output = Invoke-FixturePreflight -Root $root -MockProviderStates $states -MockRegisterCalls $registerCalls -RegisterProviders
+        Assert-Match -Actual $output -Pattern "Registered provider 'Microsoft\.DevTestLab'" -Message 'The opt-in path must report what it registered.'
+        Assert-Match -Actual $output -Pattern "Preflight passed .* using profile 'full'" -Message 'Preflight must continue once the provider is registered.'
+        Assert-Equal -Actual $registerCalls.Count -Expected 1 -Message 'Only the unregistered provider may be registered.'
+        Assert-Match -Actual $registerCalls[0] -Pattern '--namespace Microsoft\.DevTestLab --subscription 11111111-1111-1111-1111-111111111111 --wait' -Message 'Registration must target the provider in the deployment subscription and wait for it to finish.'
+    }
+    finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Test-Case 'preflight drops Microsoft.DevTestLab from the check when shutdown schedules are disabled' {
+    $root = New-ToolingFixture
+    try {
+        $states = @{ 'Microsoft.DevTestLab' = 'NotRegistered' }
+        $registerCalls = [System.Collections.Generic.List[string]]::new()
+        $output = Invoke-FixturePreflight -Root $root -MockProviderStates $states -MockRegisterCalls $registerCalls -FeatureOverrides '{"shutdownSchedules":false}'
+        Assert-Match -Actual $output -Pattern "Preflight passed .* using profile 'full'" -Message 'Without schedules the provider is not needed, so its state must not block.'
+        Assert-NotMatch -Actual $output -Pattern 'Microsoft\.DevTestLab' -Message 'An unused provider must not be verified.'
+        Assert-Equal -Actual $registerCalls.Count -Expected 0 -Message 'Nothing may be registered.'
+    }
+    finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Test-Case 'the preprovision hook runs preflight without -RegisterProviders' {
+    foreach ($relative in @('azure.yaml', 'scripts/adopt-conventions.ps1')) {
+        $text = Get-Content -LiteralPath (Get-RepoPath $relative) -Raw
+        Assert-Match -Actual $text -Pattern '(?m)^\s*\./scripts/preflight\.ps1\s*$' -Message "'$relative' must run preflight with no arguments."
+        Assert-NotMatch -Actual $text -Pattern 'RegisterProviders' -Message "'$relative' must never register providers: azd provision --preview has to stay read-only."
+    }
+}
+
+foreach ($scenario in @(
+        @{
+            Name = 'resolves names, keeps existing operators and drops duplicates'
+            Principals = @('someone@contoso.com', 'Platform Operators', '22222222-2222-2222-2222-222222222222', 'someone@contoso.com')
+            Expected = '22222222-2222-2222-2222-222222222222,11111111-1111-1111-1111-111111111111,33333333-3333-3333-3333-333333333333,44444444-4444-4444-4444-444444444444'
+        }
+        @{ Name = 'rejects a principal the tenant does not know'; Principals = @('nobody@contoso.com'); Fails = 'neither a user principal name' }
+    )) {
+    Test-Case "add-operator $($scenario.Name)" {
+        $setValues = [System.Collections.Generic.List[string]]::new()
+        function azd {
+            $global:LASTEXITCODE = 0
+            if ($args[0] -eq 'env' -and $args[1] -eq 'get-value') { return '22222222-2222-2222-2222-222222222222, 11111111-1111-1111-1111-111111111111' }
+            if ($args[0] -eq 'env' -and $args[1] -eq 'set') { $setValues.Add("$($args[2])=$($args[3])"); return }
+            throw "Unexpected azd call: $args"
+        }
+        function az {
+            $global:LASTEXITCODE = 1
+            $name = [string] $args[[array]::IndexOf($args, '--query') - 1]
+            switch ("$($args[0]) $($args[1]) $($args[2])") {
+                'ad user show' { if ($name -eq 'someone@contoso.com') { $global:LASTEXITCODE = 0; return '33333333-3333-3333-3333-333333333333' } }
+                'ad group show' { if ($name -eq 'Platform Operators') { $global:LASTEXITCODE = 0; return '44444444-4444-4444-4444-444444444444' } }
+                default { throw "Unexpected Azure call: $args" }
+            }
+        }
+        $script = Get-RepoPath 'scripts/add-operator.ps1'
+        if ($scenario.ContainsKey('Fails')) {
+            $message = ''
+            try { & $script -Principal $scenario.Principals | Out-Null } catch { $message = $_.Exception.Message }
+            Assert-Match -Actual $message -Pattern $scenario.Fails -Message 'An unknown principal must be refused.'
+            Assert-Equal -Actual $setValues.Count -Expected 0 -Message 'A refused run must not write the environment.'
+            return
+        }
+        $output = (& $script -Principal $scenario.Principals) -join "`n"
+        Assert-Equal -Actual @($setValues) -Expected @("AZURE_OPERATOR_PRINCIPAL_IDS=$($scenario.Expected)") -Message 'The merged list must keep existing operators first and add each new one once.'
+        Assert-Match -Actual $output -Pattern 'Added user someone@contoso\.com' -Message 'Each resolved principal must be reported.'
+        Assert-Match -Actual $output -Pattern 'Already an operator: 22222222-2222-2222-2222-222222222222' -Message 'An existing operator must be reported, not duplicated.'
+        Assert-Match -Actual $output -Pattern 'Run azd provision' -Message 'The script must not provision on its own.'
+    }
+}
+
+Test-Case 'connect-jumpbox rewrites the Bastion RDP file into a windowed session' {
+    # The script launches mstsc and reads the monitor layout through Win32, so
+    # the proof only runs on Windows; elsewhere the case passes without running.
+    if (-not $IsWindows) { return }
+    # The mocks run inside the script's own scope, so they report back through
+    # hashtables found by dynamic scoping rather than through $script: variables.
+    $captured = @{ Uri = ''; File = ''; Args = '' }
+    function azd {
+        $global:LASTEXITCODE = 0
+        switch ($args[2]) {
+            'AZURE_SUBSCRIPTION_ID' { return '11111111-1111-1111-1111-111111111111' }
+            'AZURE_RESOURCE_GROUP' { return 'rg-fixture' }
+            'AZURE_BASTION_NAME' { return 'bast-fixture' }
+            'AZURE_WINDOWS_VM_NAME' { return 'vm-win-fixture' }
+            default { throw "Unexpected azd call: $args" }
+        }
+    }
+    function az {
+        $global:LASTEXITCODE = 0
+        switch ("$($args[0]) $($args[1])") {
+            'network bastion' { return '{"dnsName":"bst-fixture.bastion.azure.com","tunneling":true}' }
+            'account get-access-token' { return 'fixture-token' }
+            default { throw "Unexpected Azure call: $args" }
+        }
+    }
+    function Invoke-WebRequest {
+        param($Uri, $Headers, [switch] $UseBasicParsing)
+        $captured.Uri = $Uri
+        return [pscustomobject] @{ Content = "full address:s:bst-fixture.bastion.azure.com`r`nuse multimon:i:1`r`nscreen mode id:i:2`r`ngatewayaccesstoken:s:secret`r`n" }
+    }
+    function Start-Process {
+        param($FilePath, $ArgumentList)
+        $captured.File = $FilePath
+        $captured.Args = "$ArgumentList"
+    }
+    & (Get-RepoPath 'scripts/connect-jumpbox.ps1') -Width 1600 -Height 900 -Scale 125 | Out-Null
+    $rdpFile = $captured.Args.Trim('"')
+    try {
+        Assert-Equal -Actual $captured.File -Expected 'mstsc' -Message 'The session must open in the Remote Desktop client.'
+        Assert-Match -Actual $captured.Uri -Pattern 'enablerdsaad=True' -Message 'Entra sign-in must be the default.'
+        $lines = @(Get-Content -LiteralPath $rdpFile)
+        foreach ($setting in @('use multimon:i:0', 'screen mode id:i:1', 'desktopwidth:i:1600', 'desktopheight:i:900', 'desktopscalefactor:i:125', 'smart sizing:i:1', 'dynamic resolution:i:0')) {
+            Assert-True -Condition ($lines -ccontains $setting) -Message "The RDP file must set '$setting'."
+        }
+        foreach ($key in @('use multimon:i:', 'screen mode id:i:')) {
+            Assert-Equal -Actual @($lines | Where-Object { $_.StartsWith($key) }).Count -Expected 1 -Message "Bastion's own '$key' line must be replaced, not duplicated: mstsc ignores a later duplicate."
+        }
+        Assert-True -Condition ($lines -ccontains 'full address:s:bst-fixture.bastion.azure.com') -Message 'Bastion connection settings must survive.'
+        Assert-True -Condition ($lines -ccontains 'gatewayaccesstoken:s:secret') -Message 'The gateway token must survive.'
+        Assert-True -Condition (@($lines | Where-Object { $_ -match '^winposstr:s:0,1,\d+,\d+,\d+,\d+$' }).Count -eq 1) -Message 'The window must get an explicit position.'
+    }
+    finally { if (Test-Path -LiteralPath $rdpFile) { Remove-Item -LiteralPath $rdpFile -Force } }
 }
 
 Test-Case 'adoption without a project catalog fails before copying files' {

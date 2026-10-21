@@ -181,8 +181,6 @@ function Get-ProfileFeatureFlags {
         $flags[$name] = [bool] (Invoke-ArmExpression -Expression $expression `
                 -Template $Template -Parameters $parameters)
     }
-    $flags['resolvedProfile'] = [string] (Invoke-ArmExpression -Expression $Template.variables.resolvedProfile `
-            -Template $Template -Parameters $parameters)
     return $flags
 }
 

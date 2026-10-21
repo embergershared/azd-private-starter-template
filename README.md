@@ -48,6 +48,19 @@ grants VM sign-in rights:
 azd env set AZURE_OPERATOR_PRINCIPAL_IDS (az ad signed-in-user show --query id --output tsv)
 ```
 
+It also deploys into resource providers that `core` never touches.
+`Microsoft.DevTestLab`, which backs the VM auto-shutdown schedules, is the one
+most often unregistered. Preflight names every unregistered provider with the
+command that registers it, and registers them itself only when you ask:
+
+```powershell
+.\scripts\preflight.ps1 -RegisterProviders
+```
+
+Once provisioned, only operators can sign in to a jumpbox, and
+`./scripts/connect-jumpbox.ps1` opens a windowed RDP session through Bastion;
+see [Bastion access](docs/deployment.md#standard-bastion-access-full-profile-only).
+
 Preview is not deployment. Do not run `azd provision` or `azd up` until the
 validation gate and deployment approval are complete.
 
@@ -83,9 +96,8 @@ Profiles are a cumulative ladder. Each rung adds to the one below it:
 does not force Key Vault or Storage on a project either — those are catalog
 modules you opt into.
 
-`minimal` is accepted as a deprecated alias for `private` and emits a warning.
-Update existing environments with
-`azd env set DEPLOYMENT_PROFILE private`.
+Any other value fails preflight. Environments still set to the retired
+`minimal` profile must switch with `azd env set DEPLOYMENT_PROFILE private`.
 
 Moving down the ladder stops deploying disabled resources; ARM incremental
 deployments can retain the existing VNet, Bastion, VMs and other resources, which
@@ -113,7 +125,7 @@ The conventions layer ships with every profile, including `core`:
 | `scripts/init-from-template.ps1` | Replaces the template owner's specifics with the examples in a new repository |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
-| `scripts/preflight.ps1` | Fail-closed validation before any deployment |
+| `scripts/preflight.ps1` | Fail-closed validation before any deployment; `-RegisterProviders` registers missing resource providers on request |
 | `scripts/set-deployment-tags.ps1` | Subscription code, lifecycle tags, and override transport |
 | `tests/` | The suite that proves names, rules, catalog and profiles are intact |
 
@@ -141,8 +153,9 @@ catalog, and how to author and promote a module.
 
 The suite proves that resource names have not drifted, that every name obeys its
 resource rules, that the catalog is in sync, that all Bicep builds and lints
-clean, and that `core` produces no `Microsoft.Network` or `Microsoft.Compute`
-resources.
+clean, that every module's dependencies still resolve to well-formed resource
+IDs when its optional inputs keep their defaults, and that `core` produces no
+`Microsoft.Network` or `Microsoft.Compute` resources.
 
 ## Documentation
 

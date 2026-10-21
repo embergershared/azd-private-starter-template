@@ -27,12 +27,26 @@ These rules are enforced by `scripts/preflight.ps1` and by the module itself:
 - `entraLogin` requires a virtual machine and requires `natGateway` for egress
 - `shutdownSchedules` requires a virtual machine
 
+`Microsoft.DevTestLab` is needed only by the auto-shutdown schedules, so
+preflight drops it from the registration check when `shutdownSchedules` is
+false. It is the provider most often unregistered in a subscription; see
+[resource providers](../../../docs/deployment.md#resource-providers).
+
 ## Credentials
 
 Administrator passwords are generated with `newGuid()` in the `key-vault`
 module and written to Key Vault. They are never emitted as template outputs and
 never written to `.azure` state. `credentialRotationTag` forces regeneration
 when it changes.
+
+## Access
+
+Only operators can use Entra login: the module grants **Virtual Machine User
+Login** to `operatorPrincipalIds`, and an account without it hangs at the
+second RDP credential prompt. `scripts/add-operator.ps1` adds people or groups
+by name, and `scripts/connect-jumpbox.ps1` opens a windowed RDP session
+through Bastion. See
+[Bastion access](../../../docs/deployment.md#standard-bastion-access-full-profile-only).
 
 ## Parameters
 
