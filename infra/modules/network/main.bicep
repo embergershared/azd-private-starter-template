@@ -26,10 +26,20 @@ param jumpboxSubnetPrefix string
 param privateEndpointSubnetPrefix string
 param enableNatGateway bool = false
 param natGatewayId string = ''
+@description('Deploy AzureBastionSubnet and the jumpbox subnet with their NSGs. Disable for workloads without Bastion or jumpboxes.')
+param deployJumpboxSubnets bool = true
+@description('Delegated Container Apps infrastructure subnet prefix (/27 or larger). Empty skips the subnet and its NSG.')
+param containerAppsSubnetPrefix string = ''
+@maxLength(80)
+param containerAppsSubnetName string = ''
+@maxLength(80)
+param containerAppsNetworkSecurityGroupName string = ''
+
+var deployContainerAppsSubnet = !empty(containerAppsSubnetPrefix)
 
 var bastionSubnetName = 'AzureBastionSubnet'
 
-resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
+resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = if (deployJumpboxSubnets) {
   name: bastionNetworkSecurityGroupName
   location: location
   tags: tags
@@ -254,7 +264,7 @@ var jumpboxOutboundRules = concat(
   ]
 )
 
-resource jumpboxNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
+resource jumpboxNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = if (deployJumpboxSubnets) {
   name: jumpboxNetworkSecurityGroupName
   location: location
   tags: tags
@@ -345,17 +355,22 @@ resource privateEndpointNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01'
   }
 }
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
-  name: name
+// Container Apps workload-profiles environments manage their own ingress through
+// the environment's public IP and need outbound access to Azure services and
+// image registries, so this NSG keeps Azure's default rules. Owning the NSG
+// (rather than leaving the subnet bare) also keeps policy-generated NSGs, with
+// names outside the convention, from being attached.
+resource containerAppsNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = if (deployContainerAppsSubnet) {
+  name: containerAppsNetworkSecurityGroupName
   location: location
   tags: tags
   properties: {
-    addressSpace: {
-      addressPrefixes: [
-        vnetAddressPrefix
-      ]
-    }
-    subnets: [
+    securityRules: []
+  }
+}
+
+var jumpboxSubnets = deployJumpboxSubnets
+  ? [
       {
         name: bastionSubnetName
         properties: {
@@ -380,18 +395,58 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
             : null
         }
       }
+    ]
+  : []
+
+var containerAppsSubnets = deployContainerAppsSubnet
+  ? [
       {
-        name: privateEndpointSubnetName
+        name: containerAppsSubnetName
         properties: {
-          addressPrefix: privateEndpointSubnetPrefix
-          defaultOutboundAccess: false
-          privateEndpointNetworkPolicies: 'NetworkSecurityGroupEnabled'
+          addressPrefix: containerAppsSubnetPrefix
+          delegations: [
+            {
+              name: 'containerapps'
+              properties: {
+                serviceName: 'Microsoft.App/environments'
+              }
+            }
+          ]
           networkSecurityGroup: {
-            id: privateEndpointNsg.id
+            id: containerAppsNsg.id
           }
         }
       }
     ]
+  : []
+
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
+  name: name
+  location: location
+  tags: tags
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        vnetAddressPrefix
+      ]
+    }
+    subnets: concat(
+      jumpboxSubnets,
+      [
+        {
+          name: privateEndpointSubnetName
+          properties: {
+            addressPrefix: privateEndpointSubnetPrefix
+            defaultOutboundAccess: false
+            privateEndpointNetworkPolicies: 'NetworkSecurityGroupEnabled'
+            networkSecurityGroup: {
+              id: privateEndpointNsg.id
+            }
+          }
+        }
+      ],
+      containerAppsSubnets
+    )
   }
 }
 
@@ -412,3 +467,6 @@ output privateEndpointSubnetId string = resourceId(
   virtualNetwork.name,
   privateEndpointSubnetName
 )
+output containerAppsSubnetId string = deployContainerAppsSubnet
+  ? resourceId('Microsoft.Network/virtualNetworks/subnets', virtualNetwork.name, containerAppsSubnetName)
+  : ''

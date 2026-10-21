@@ -14,13 +14,30 @@ applyTo: "infra/**,azure.yaml,docs/**/*.md,scripts/**/*.ps1"
   Enforce each resource's character, case, global uniqueness, and length rules
   as recorded in `infra/core/name-rules.json`.
 - Compose configurable names in
-  `<resource-prefix>-<location-code>-<subscription-code>-<environment>` order.
+  `<resource-prefix>-<tenant-code>-<location-code>-<subscription-code>-<environment>`
+  order. Resolve the tenant code from `infra/core/tenant-codes.json` by tenant
+  ID (2-12 lowercase alphanumeric characters, empty for pre-tenant names); only
+  regional names carry it, never Key Vault or storage names.
   Use the shared `infra/core/location-codes.json` catalog and cached
-  subscription code; fail closed when either derivation is invalid or unstable.
+  subscription code. The code is `s<N>` from a `-<1-4 digits>` display-name
+  suffix or a delimited `s<N>` name token (`Contoso-s2-Projects`), otherwise `s`
+  plus the first four hex characters of the subscription ID, unless
+  `AZURE_SUBSCRIPTION_CODE` is explicitly set for a name that carries no code;
+  fail closed when either derivation is invalid or unstable.
 - Use the repository naming contract:
   `rg-`, `appins-`, `law-`, `pe-`, `pe-nic-`, `vnet-`, `snet-`, `nsg-`,
-  `bast-`, `vm-win-`, `vm-lin-`, `stacct`, and `kv-`. Storage account names
+  `bast-`, `vm-win-`, `vm-lin-`, `stacct`, `kv-`, `cae-`, `ca-`, `cr`, `id-`,
+  `aif-`, `proj-`, and `map-`. Storage account and container registry names
   must contain only lowercase letters and numbers.
+- Name every platform-managed resource group with
+  `managedResourceGroupName(resourceGroupName)`: the full name of the resource
+  group that owns the service plus `-managed`, for example
+  `rg-567410-use2-s3-dev-managed`. This covers the Container Apps environment
+  `infrastructureResourceGroup`, the AKS `nodeResourceGroup`, managed
+  application and Databricks managed resource groups, and any other service
+  that creates its own resource group. Never accept the generated `MC_`/`ME_`
+  names, and never put workload resources in a managed resource group. These
+  names are set at creation and cannot change without recreating the service.
 - Prefix subnets with `snet-` except for service-reserved names. Azure Bastion
   must use the exact subnet name `AzureBastionSubnet`.
 - Use a stable three-character suffix derived from subscription, environment,

@@ -51,6 +51,8 @@ output zones array = deployedZones
 output zoneIds object = toObject(deployedZones, entry => entry.key, entry => entry.id)
 
 // Retained so existing callers keep working. New modules should read zoneIds.
-output keyVaultZoneId string = zone[indexOf(zoneKeys, 'keyVault')].id
-output blobZoneId string = zone[indexOf(zoneKeys, 'blob')].id
-output fileZoneId string = zone[indexOf(zoneKeys, 'file')].id
+// Empty when the catalog has no such zone, so an adopted project whose catalog
+// omits Key Vault or Storage still compiles and deploys.
+output keyVaultZoneId string = contains(zoneKeys, 'keyVault') ? zone[indexOf(zoneKeys, 'keyVault')].id : ''
+output blobZoneId string = contains(zoneKeys, 'blob') ? zone[indexOf(zoneKeys, 'blob')].id : ''
+output fileZoneId string = contains(zoneKeys, 'file') ? zone[indexOf(zoneKeys, 'file')].id : ''

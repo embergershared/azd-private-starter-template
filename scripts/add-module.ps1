@@ -133,7 +133,7 @@ switch ($entry.nameRule) {
         $nameLines.Add("var $($camel)Name = shortName('$($entry.abbreviation)', environmentName, shortUniqueSuffix, 15)")
     }
     default {
-        $nameLines.Add("var $($camel)Name = azName($abbreviationToken, locationCode, subscriptionCode, environmentName, '')")
+        $nameLines.Add("var $($camel)Name = azName($abbreviationToken, tenantCode, locationCode, subscriptionCode, environmentName, '')")
     }
 }
 
@@ -163,8 +163,8 @@ foreach ($endpoint in $endpoints) {
         $zoneParam = "$($suffix)PrivateDnsZoneId"
     }
 
-    $nameLines.Add("var $peNameVar = azName(abbreviations.privateEndpoint, locationCode, subscriptionCode, environmentName, '$suffix')")
-    $nameLines.Add("var $peNicVar = azName(abbreviations.privateEndpointNetworkInterface, locationCode, subscriptionCode, environmentName, '$suffix')")
+    $nameLines.Add("var $peNameVar = azName(abbreviations.privateEndpoint, tenantCode, locationCode, subscriptionCode, environmentName, '$suffix')")
+    $nameLines.Add("var $peNicVar = azName(abbreviations.privateEndpointNetworkInterface, tenantCode, locationCode, subscriptionCode, environmentName, '$suffix')")
 
     $moduleParamLines.Add("    $($nameParam): $peNameVar")
     $moduleParamLines.Add("    $($nicParam): $peNicVar")

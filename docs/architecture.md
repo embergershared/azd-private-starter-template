@@ -80,19 +80,32 @@ reserves:
 ## Naming contract
 
 Resource names are composed by the `@export()`ed functions in
-`infra/core/naming.bicep` from the AZD environment, the approved region code in
+`infra/core/naming.bicep` from the AZD environment, the approved tenant code in
+`infra/core/tenant-codes.json`, the approved region code in
 `infra/core/location-codes.json`, the cached subscription code, and
 `infra/core/abbreviations.json`. `infra/main.bicep` imports those functions; it
 does not reimplement them. The standard order is
-`<resource-prefix>-<location-code>-<subscription-code>-<environment>`.
+`<resource-prefix>-<tenant-code>-<location-code>-<subscription-code>-<environment>`,
+for example `rg-567410-use2-s2-my-azd-env-test`.
 
-Because Bicep user-defined functions may not call `subscription()`, the caller
-resolves the uniqueness suffix and the location code and passes them in. Every
+The tenant code is looked up by the deployment's Entra tenant ID, so it stays
+the same when subscriptions are renamed or no longer carry the tenant in their
+display name. Only regional names carry it. Key Vault and storage account names
+keep `<prefix>-<location-code>-<subscription-code>-<environment>-<hash>`: a
+tenant code does not fit their 24-character budget, and their hash already
+differs per subscription. A catalog entry with an empty code keeps that
+tenant's pre-tenant regional names. Codes are 2-12 lowercase alphanumeric
+characters; twelve is the most that keeps a 32-character environment within the
+Log Analytics and VM name limits.
+
+Because Bicep user-defined functions may not call `subscription()` or
+`tenant()`, the caller resolves the uniqueness suffix, the tenant code and the
+location code and passes them in. Every
 name in the template is produced by one of three functions:
 
 | Function | Produces |
 |---|---|
-| `baseName` | The shared `<location-code>-<subscription-code>-<environment>` base |
+| `baseName` | The shared `<tenant-code>-<location-code>-<subscription-code>-<environment>` base |
 | `azName` | A standard hyphenated resource name, optionally with a purpose segment |
 | `globalName` | A globally unique, length-capped name that truncates only the environment segment |
 
@@ -118,6 +131,14 @@ rendered name obeys them.
 | VM NIC | `nic-` | Standard order plus `win` or `lin` purpose |
 | Storage account | `stacct` | Separators removed; lowercase alphanumeric; environment truncated; three-character hash retained; maximum 24 characters |
 | Key Vault | `kv-` | Environment truncated; three-character hash retained; maximum 24 characters |
+| Container Apps environment | `cae-` | Standard segment order; maximum 60 characters; its platform-managed resource group follows the managed resource group rule |
+| Platform-managed resource group | `<resource group name>-managed` | `managedResourceGroupName()`: the owning resource group name plus `-managed`, for every service that creates its own resource group (Container Apps environment infrastructure, AKS node resource group, managed applications, Databricks managed resource group); maximum 90 characters |
+| Container app | `ca-` | Standard segment order; maximum 32 characters, so keep environment names short |
+| Container registry | `cr` | Separators removed; lowercase alphanumeric; environment truncated; three-character hash retained; maximum 50 characters |
+| Managed identity | `id-` | Standard order plus workload purpose |
+| Foundry account | `aif-` | Also the custom subdomain, so globally unique: environment truncated; three-character hash retained; maximum 64 characters |
+| Foundry project | `proj-` | Standard segment order; maximum 64 characters |
+| Azure Maps account | `map-` | Standard segment order using the Maps region's location code |
 
 For example, East US 2, subscription
 `ME-MngEnvMCAP391575-emberger-1`, and AZD environment `poc` produce the common
@@ -131,7 +152,9 @@ catalog only after reviewing the proposed code for collisions; do not change a
 published code for an existing region.
 
 The subscription code is `s` plus the final hyphen-delimited 1-4 digit token in
-the active subscription display name. It is cached in the AZD environment on
+the active subscription display name, else a delimited `s<N>` token in that
+name, else `s` plus the first four hex characters of the subscription ID. It is
+cached in the AZD environment on
 first initialization and verified on every preflight. A subscription rename
 that changes the derived code blocks provisioning so it cannot silently change
 resource identities.

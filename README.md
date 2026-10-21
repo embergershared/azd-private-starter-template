@@ -20,19 +20,18 @@ it needs a desktop inside that VNet.
 
 ```powershell
 # Variables values
-$subscriptionId = '<subscription-guid>'
+$tenantId = 'dd045087-7959-4625-81a9-bf44022f1aa8' # must be listed in infra/core/tenant-codes.json
+$subscriptionId = '113c3bf3-dff3-4bb7-84e8-2cd44152185e' # MngEnv567410-s2-Sandbox
 # Use a lowercase, unique 2-32 character environment name.
 $environment = 'my-azd-env-dev'
 $location = 'eastus2'
 $deploymentProfile = 'core' # core, private, or full
 
 # Commands execution
-az login
+az login --tenant $tenantId
 az account set --subscription $subscriptionId
-azd auth login
-azd env new $environment
-azd env set AZURE_SUBSCRIPTION_ID $subscriptionId
-azd env set AZURE_LOCATION $location
+azd auth login --tenant-id $tenantId
+azd env new $environment --subscription $subscriptionId --location $location
 azd env set DEPLOYMENT_PROFILE $deploymentProfile
 .\scripts\set-deployment-tags.ps1
 azd provision --preview -e $environment
@@ -51,8 +50,13 @@ validation gate and deployment approval are complete.
 Run `set-deployment-tags.ps1` once after creating an environment. AZD resolves
 required Bicep inputs before `preprovision` hooks run; the script seeds those
 first-use values, including the stable subscription code, and the hook refreshes
-update metadata on later provisions. The active subscription display name must
-end in a hyphen-delimited 1-4 digit token, such as `-1`.
+update metadata on later provisions. When `AZURE_SUBSCRIPTION_ID` is not set,
+the script uses the subscription the Azure CLI is signed in to, and both scripts
+fail if the Azure CLI and `azd` target different subscriptions. The subscription
+code comes from a final `-<N>` display-name token (`-1` gives `s1`), a delimited
+`s<N>` token (`MngEnv567410-s2-Sandbox` gives `s2`), or the subscription ID. To
+target another tenant or subscription, see
+[Deploy to another tenant or subscription](docs/deployment.md#deploy-to-another-tenant-or-subscription).
 
 ## Deployment profiles
 
@@ -100,6 +104,7 @@ The conventions layer ships with every profile, including `core`:
 | `infra/core/tags.bicep` | The exported common-tag function |
 | `infra/core/private-endpoint.bicep` | The one private endpoint and DNS pattern every module uses |
 | `infra/core/abbreviations.json` | Approved Cloud Adoption Framework resource abbreviations |
+| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
 | `scripts/preflight.ps1` | Fail-closed validation before any deployment |

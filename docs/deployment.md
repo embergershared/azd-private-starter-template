@@ -26,9 +26,11 @@ The deployment identity needs:
   metadata used by preflight. Preflight only queries the providers the enabled
   modules declare, so a `core` deployment makes no compute or network calls.
 
-  The target subscription display name must end in a hyphen-delimited 1-4 digit
-  token. The initialization helper caches that token as `s<digits>` for resource
-  naming, and preflight blocks if a later subscription rename would change it.
+  The subscription code comes from the display name's final hyphen-delimited
+  1-4 digit token (`-3` gives `s3`) or a delimited `s<N>` token
+  (`MngEnv567410-s2-Sandbox` gives `s2`), falling back to the subscription ID.
+  The initialization helper caches it for resource naming, and preflight blocks
+  if a later subscription rename would change it.
 
 Configured operator principals receive:
 
@@ -83,10 +85,10 @@ intentional and licensed for the target tenant.
    Azure.
 
 ```powershell
-azd auth login
-azd env new <environment>
-azd env set AZURE_SUBSCRIPTION_ID <subscription-guid>
-azd env set AZURE_LOCATION eastus2
+az login --tenant <tenant-guid>
+az account set --subscription <subscription-guid>
+azd auth login --tenant-id <tenant-guid>
+azd env new <environment> --subscription <subscription-guid> --location eastus2
 azd env set DEPLOYMENT_PROFILE core
 # Only when the profile or an override enables a VM or role assignments:
 azd env set AZURE_OPERATOR_PRINCIPAL_IDS <entra-object-guid>
@@ -97,6 +99,54 @@ The final command is a required one-time bootstrap for each new environment.
 It initializes the stable subscription code and lifecycle values. AZD resolves
 required Bicep parameters before running pre-provision hooks; later provisions
 verify the code and refresh update metadata automatically.
+
+If `AZURE_SUBSCRIPTION_ID` is not set, the bootstrap uses the subscription the
+Azure CLI is signed in to. The bootstrap and preflight both fail when the Azure
+CLI and `azd` target different subscriptions.
+
+### Deploy to another tenant or subscription
+
+The default target is tenant `dd045087-7959-4625-81a9-bf44022f1aa8`
+(code `567410`) and subscription `MngEnv567410-s2-Sandbox`. The tenant catalog
+approves these tenants:
+
+| Tenant | Tenant ID | Code | Subscriptions |
+|---|---|---|---|
+| Contoso | `dd045087-7959-4625-81a9-bf44022f1aa8` | `567410` | `MngEnv567410-s1-Hub`, `MngEnv567410-s2-Sandbox` (default), `MngEnv567410-s3-Projects` |
+| Caldova | `7fe93c78-6179-4890-9320-bbe36717e13b` | `68819187` | `Caldova-68819187-s1` (`5c6f5679-f43b-4d03-8a38-d4f2cf8d1bdc`, code `s1`) |
+
+Nothing in the template is tied to them. To target another one:
+
+1. **Approve the tenant.** Add it to `infra/core/tenant-codes.json` before its
+   first deployment, as described in
+   [resource naming](configuration.md#resource-naming). Preflight and Bicep
+   both fail closed for an unlisted tenant. Use an empty code only when the
+   tenant's resources must keep names without a tenant segment.
+2. **Sign both CLIs in to that tenant.** The Azure CLI and `azd` keep separate
+   logins, and the scripts check that they agree:
+
+   ```powershell
+   az login --tenant <tenant-guid>
+   az account set --subscription <subscription-guid>
+   azd auth login --tenant-id <tenant-guid>
+   ```
+
+3. **Use a new environment per subscription.** Names, the cached subscription
+   code and the lifecycle tags belong to one subscription, so do not repoint an
+   existing environment:
+
+   ```powershell
+   azd env new <environment> --subscription <subscription-guid> --location <region>
+   .\scripts\set-deployment-tags.ps1
+   ```
+
+4. **Check the subscription code.** Display names such as
+   `MngEnv567410-s3-Projects` give `s3`. A name without a `-<N>` suffix or an
+   `s<N>` token, such as `Pay as you go`, falls back to `s` plus the first four
+   hex characters of the subscription ID; choose a readable one before the
+   first provision with `azd env set AZURE_SUBSCRIPTION_CODE s1`.
+5. **Register providers and check quota** in the new subscription. Preflight
+   reports unregistered providers but never registers them.
 
 ## 2. Validate
 

@@ -42,8 +42,8 @@ and rollback/recovery; changing profiles does not guarantee deletion.
 | Name | Purpose | Required in |
 |---|---|---|
 | `AZURE_ENV_NAME` | Lowercase 2–32 character environment name; initialized by `azd env new` | all profiles |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription GUID; its display name must end in a hyphen and 1-4 digits | all profiles |
-| `AZURE_SUBSCRIPTION_CODE` | Internal cached `s<digits>` code initialized and verified by `set-deployment-tags.ps1` | all profiles |
+| `AZURE_SUBSCRIPTION_ID` | Target subscription GUID; defaults to the active Azure CLI subscription and must match it | all profiles |
+| `AZURE_SUBSCRIPTION_CODE` | Internal cached `s<N>` code initialized and verified by `set-deployment-tags.ps1` | all profiles |
 | `AZURE_LOCATION` | Azure region, default design target `eastus2` | all profiles |
 | `DEPLOYMENT_PROFILE` | `core`, `private`, or `full`; hook defaults to `core` | all profiles |
 | `AZURE_REPOSITORY` | Repository name used for the `repository` tag; derived from the git remote by `set-deployment-tags.ps1` | all profiles |
@@ -63,10 +63,21 @@ ARM parameter JSON without quote corruption. Do not edit the encoded value.
 repository folder name. Set it explicitly when the tag should not match either —
 for example when the same infrastructure is maintained in a fork.
 
+When `AZURE_SUBSCRIPTION_ID` is not set, the environment helper initializes it
+from the subscription the Azure CLI is signed in to (`az account show`). The
+helper and preflight both fail when the Azure CLI's active subscription differs
+from `AZURE_SUBSCRIPTION_ID`, because preflight queries Azure through the Azure
+CLI while `azd` deploys with its own login. Fix it with
+`az account set --subscription <AZURE_SUBSCRIPTION_ID>`.
+
 The environment helper derives `AZURE_SUBSCRIPTION_CODE` from the active
 subscription display name, seeds it with `AZURE_CREATED_ON`, and verifies it on
-later runs. The display name must end in a final hyphen-delimited 1-4 digit
-token; for example, `ME-MngEnvMCAP391575-emberger-3` derives `s3`. If a
+later runs. A final hyphen-delimited 1-4 digit token wins
+(`ME-MngEnvMCAP391575-emberger-3` derives `s3`), then a delimited `s<N>` token
+(`MngEnv567410-s2-Sandbox` derives `s2`), then `s` plus the first four hex
+characters of the subscription ID. For a display name that carries no code you
+can instead choose one with `azd env set AZURE_SUBSCRIPTION_CODE s1` before the
+first provision. If a
 subscription rename would derive a different code, preflight fails instead of
 silently changing resource identities. Review the replacement impact before
 manually updating the cached code.
@@ -96,7 +107,9 @@ Core checks always run:
 
 - `AZURE_ENV_NAME` format
 - subscription GUID format, and that the subscription exists and is enabled
+- the Azure CLI's active subscription matches `AZURE_SUBSCRIPTION_ID`
 - `AZURE_SUBSCRIPTION_CODE` derivation and stability
+- the subscription's tenant has an approved code in `infra/core/tenant-codes.json`
 - the location is a recognized Azure region and is present in the location-code
   catalog
 
@@ -171,13 +184,24 @@ provider only when that enrollment is intentional; Microsoft Intune uses
 ## Resource naming
 
 The template enforces the
-`<resource-prefix>-<location-code>-<subscription-code>-<environment>` order and
+`<resource-prefix>-<tenant-code>-<location-code>-<subscription-code>-<environment>` order and
 resource-specific length/character constraints in `infra/core/naming.bicep`; see
 the [architecture naming contract](architecture.md#naming-contract). Do not
 encode custom resource names in AZD environment values. Changing a prefix or
 suffix replaces resources whose Azure names are immutable, so review the preview
 for data migration, retained resources, downtime, and additional cost before
 provisioning an existing environment.
+
+`infra/core/tenant-codes.json` maps each Entra tenant ID to a display name and a
+short code. Preflight fails closed for a tenant that is not listed. Add a tenant
+before its first deployment:
+
+```json
+"dd045087-7959-4625-81a9-bf44022f1aa8": { "name": "Contoso", "code": "567410" }
+```
+
+Changing an existing tenant's code renames, and therefore replaces, every
+regional resource in that tenant. Each resource also gets a `tenant-code` tag.
 
 `infra/core/location-codes.json` is the shared public-cloud location catalog
 used by Bicep and preflight. An Azure location that is valid but not yet mapped

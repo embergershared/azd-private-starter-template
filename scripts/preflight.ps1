@@ -184,13 +184,15 @@ if (
 ) {
     throw 'AZURE_SUBSCRIPTION_ID must be a non-empty GUID.'
 }
+Assert-DeploymentSubscription -SubscriptionId $subscriptionId
 
 $account = Invoke-AzJson -Arguments @('account', 'show', '--subscription', $subscriptionId)
 if ($account.state -ne 'Enabled') {
     throw "Subscription '$subscriptionId' is not enabled."
 }
 $null = Assert-SubscriptionCode -SubscriptionName $account.name `
-    -CachedCode $cachedSubscriptionCode
+    -CachedCode $cachedSubscriptionCode -SubscriptionId $subscriptionId
+Write-Output "Target subscription: '$($account.name)' ($subscriptionId) in tenant $($account.tenantId)."
 
 $locations = @(Invoke-AzJson -Arguments @('account', 'list-locations', '--query', "[?name=='$location'].name"))
 if ($locations.Count -eq 0) {
@@ -198,6 +200,8 @@ if ($locations.Count -eq 0) {
 }
 $locationCatalogPath = Join-Path $repoRoot 'infra/core/location-codes.json'
 $locationCode = Get-LocationCode -Location $location -CatalogPath $locationCatalogPath
+$tenantCode = Get-TenantCode -TenantId $account.tenantId `
+    -CatalogPath (Join-Path $repoRoot 'infra/core/tenant-codes.json')
 
 # ---------------------------------------------------------------------------
 # Provider registration - derived from the modules actually enabled
@@ -343,6 +347,6 @@ if ($requestedChecks.Contains('vcpuQuota')) {
 }
 
 $moduleList = ($enabledModules | ForEach-Object { $_['name'] }) -join ', '
-Write-Output "Preflight passed for environment '$environmentName' using profile '$resolvedProfile' in '$location' ($locationCode) and subscription code '$cachedSubscriptionCode'."
+Write-Output "Preflight passed for environment '$environmentName' using profile '$resolvedProfile' in '$location' ($locationCode), tenant code '$tenantCode' and subscription code '$cachedSubscriptionCode'."
 Write-Output "Modules: $moduleList"
 Write-Output "Providers verified: $($providers -join ', ')"
