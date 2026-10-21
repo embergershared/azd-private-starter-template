@@ -220,7 +220,7 @@ if ($hookState -ne 'Present') {
 # ---------------------------------------------------------------------------
 
 $stamp = [ordered] @{
-    '$schema'   = 'https://github.com/embergershared/azure-azd-starter/blob/main/docs/modules.md'
+    '$schema'   = 'https://github.com/embergershared/azd-private-starter-template/blob/main/docs/modules.md'
     template    = $template.Name
     version     = $template.Version
     stamp       = $template.Stamp

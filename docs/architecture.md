@@ -86,7 +86,7 @@ Resource names are composed by the `@export()`ed functions in
 `infra/core/abbreviations.json`. `infra/main.bicep` imports those functions; it
 does not reimplement them. The standard order is
 `<resource-prefix>-<tenant-code>-<location-code>-<subscription-code>-<environment>`,
-for example `rg-100001-use2-s2-my-azd-env-test`.
+for example `rg-123456-use2-s2-my-azd-env-dev`.
 
 The tenant code is looked up by the deployment's Entra tenant ID, so it stays
 the same when subscriptions are renamed or no longer carry the tenant in their
@@ -141,7 +141,7 @@ rendered name obeys them.
 | Azure Maps account | `map-` | Standard segment order using the Maps region's location code |
 
 For example, East US 2, subscription
-`ME-MngEnvMCAP300003-emberger-1`, and AZD environment `poc` produce the common
+`Contoso-Dev-1`, and AZD environment `poc` produce the common
 base `use2-s1-poc`. East US 2 maps to `use2`; West US 3 maps to `usw3`; Canada
 Central maps to `cac`.
 

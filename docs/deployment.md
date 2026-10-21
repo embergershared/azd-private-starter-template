@@ -28,7 +28,7 @@ The deployment identity needs:
 
   The subscription code comes from the display name's final hyphen-delimited
   1-4 digit token (`-3` gives `s3`) or a delimited `s<N>` token
-  (`MngEnv100001-s2-Sandbox` gives `s2`), falling back to the subscription ID.
+  (`Contoso-s2-Sandbox` gives `s2`), falling back to the subscription ID.
   The initialization helper caches it for resource naming, and preflight blocks
   if a later subscription rename would change it.
 
@@ -104,18 +104,31 @@ If `AZURE_SUBSCRIPTION_ID` is not set, the bootstrap uses the subscription the
 Azure CLI is signed in to. The bootstrap and preflight both fail when the Azure
 CLI and `azd` target different subscriptions.
 
+### Starting a repository from the template
+
+The template repository commits its owner's tenants and subscriptions in
+[`docs/targets.md`](targets.md) and `infra/core/tenant-codes.json`. Each has an
+`.example` sibling with placeholder values. On a new repository's first push to
+`main`, the `template-init` workflow runs `scripts/init-from-template.ps1`,
+which copies each example over its specifics file and commits the result. If
+the workflow did not run (Actions disabled, or read-only workflow permissions),
+run the script yourself before the first deployment:
+
+```powershell
+./scripts/init-from-template.ps1
+```
+
+Then record your own tenants in both files, as described below. Preflight and
+Bicep fail closed until the deployment's tenant is listed, so the example
+catalog cannot be deployed by mistake. Commit both files; they are this
+repository's specifics from then on, and the workflow never runs again.
+
 ### Deploy to another tenant or subscription
 
-The default target is tenant `00000000-0000-4000-8000-000000000001`
-(code `100001`) and subscription `MngEnv100001-s2-Sandbox`. The tenant catalog
-approves these tenants:
-
-| Tenant | Tenant ID | Code | Subscriptions |
-|---|---|---|---|
-| Contoso | `00000000-0000-4000-8000-000000000001` | `100001` | `MngEnv100001-s1-Hub`, `MngEnv100001-s2-Sandbox` (default), `MngEnv100001-s3-Projects` |
-| Fabrikam | `00000000-0000-4000-8000-000000000002` | `200002` | `Fabrikam-200002-s1` (`00000000-0000-4000-8000-000000000004`, code `s1`) |
-
-Nothing in the template is tied to them. To target another one:
+The approved tenants are the ones listed in `infra/core/tenant-codes.json`, and
+[`docs/targets.md`](targets.md) records them with their subscriptions and the
+default target. Nothing else in the template is tied to a tenant or
+subscription. To target another one:
 
 1. **Approve the tenant.** Add it to `infra/core/tenant-codes.json` before its
    first deployment, as described in
@@ -141,7 +154,7 @@ Nothing in the template is tied to them. To target another one:
    ```
 
 4. **Check the subscription code.** Display names such as
-   `MngEnv100001-s3-Projects` give `s3`. A name without a `-<N>` suffix or an
+   `Contoso-s3-Projects` give `s3`. A name without a `-<N>` suffix or an
    `s<N>` token, such as `Pay as you go`, falls back to `s` plus the first four
    hex characters of the subscription ID; choose a readable one before the
    first provision with `azd env set AZURE_SUBSCRIPTION_CODE s1`.

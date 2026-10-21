@@ -25,6 +25,7 @@ $abbreviationsPath = Get-RepoPath 'infra\core\abbreviations.json'
 $locationCodesPath = Get-RepoPath 'infra\core\location-codes.json'
 $nameRulesPath = Get-RepoPath 'infra\core\name-rules.json'
 $tenantCodesPath = Get-RepoPath 'infra\core\tenant-codes.json'
+$tenantCodesExamplePath = Get-RepoPath 'infra\core\tenant-codes.example.json'
 $goldenPath = Get-RepoPath 'tests\fixtures\legacy-names.golden.json'
 
 $abbreviations = Get-Content -LiteralPath $abbreviationsPath -Raw | ConvertFrom-Json -AsHashtable
@@ -136,14 +137,14 @@ Test-Case 'a tenant code is inserted into regional names only' {
         $rendered = Get-BicepRenderedNames -Template $template `
             -LocationCode $case.LocationCode -SubscriptionCode $case.SubscriptionCode `
             -EnvironmentName $case.EnvironmentName -ShortUniqueSuffix $case.ShortUniqueSuffix `
-            -TenantCode '100001'
+            -TenantCode '123456'
         $body = "-$($case.LocationCode)-$($case.SubscriptionCode)-"
 
         foreach ($key in $golden[$i].names.Keys) {
             $old = [string] $golden[$i].names[$key]
             $at = $old.IndexOf($body)
             $expected = if ($nameRules.resources[$key].class -eq 'regional') {
-                $old.Substring(0, $at) + "-100001" + $old.Substring($at)
+                $old.Substring(0, $at) + "-123456" + $old.Substring($at)
             }
             else { $old }
             Assert-Equal $rendered[$key] $expected "'$key' did not place the tenant code correctly."
@@ -151,9 +152,9 @@ Test-Case 'a tenant code is inserted into regional names only' {
     }
 
     $bicepGroup = (Get-BicepRenderedNames -Template $template -LocationCode 'use2' -SubscriptionCode 's2' `
-            -EnvironmentName 'my-azd-env-test' -ShortUniqueSuffix 'abc' -TenantCode '100001').resourceGroup
-    Assert-Equal $bicepGroup 'rg-100001-use2-s2-my-azd-env-test' 'Contoso resource group name mismatch.'
-    Assert-Equal (Get-AzName -Abbreviation 'rg' -TenantCode '100001' -LocationCode 'use2' `
+            -EnvironmentName 'my-azd-env-test' -ShortUniqueSuffix 'abc' -TenantCode '123456').resourceGroup
+    Assert-Equal $bicepGroup 'rg-123456-use2-s2-my-azd-env-test' 'Tenant-coded resource group name mismatch.'
+    Assert-Equal (Get-AzName -Abbreviation 'rg' -TenantCode '123456' -LocationCode 'use2' `
             -SubscriptionCode 's2' -EnvironmentName 'my-azd-env-test') $bicepGroup `
         'Get-AzName differs from the Bicep azName for a tenant code.'
 }
@@ -176,12 +177,17 @@ Test-Case 'the tenant-code catalog is valid and agrees with Bicep tenantCodeFor'
         if ($fromScript) { Assert-True ($seen.Add($fromScript)) "Tenant code '$fromScript' is duplicated." }
     }
 
-    Assert-Equal (Get-TenantCode -TenantId '00000000-0000-4000-8000-000000000001' -CatalogPath $tenantCodesPath) '100001' `
-        'Contoso tenant code mismatch.'
-    Assert-Equal (Get-TenantCode -TenantId '00000000-0000-4000-8000-000000000002' -CatalogPath $tenantCodesPath) '200002' `
-        'Fabrikam tenant code mismatch.'
-    Assert-Throws { Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $tenantCodesPath } `
+    Assert-Throws { Get-TenantCode -TenantId 'ffffffff-ffff-ffff-ffff-ffffffffffff' -CatalogPath $tenantCodesPath } `
         'Unknown tenants must fail.'
+}
+
+Test-Case 'the example tenant-code catalog is what a new repository starts from' {
+    # The real catalog holds the template owner's tenants; a repository created
+    # from the template replaces it with this file (scripts/init-from-template.ps1).
+    Assert-Equal (Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $tenantCodesExamplePath) '123456' `
+        'Example tenant code mismatch.'
+    Assert-Throws { Get-TenantCode -TenantId 'ffffffff-ffff-ffff-ffff-ffffffffffff' -CatalogPath $tenantCodesExamplePath } `
+        'Unknown tenants must fail against the example catalog.'
 }
 
 Test-Case 'globally unique names keep prefix, location, subscription and hash' {
@@ -258,22 +264,22 @@ Test-Case 'Get-LocationCode agrees with the Bicep locationCodeFor function' {
 }
 
 Test-Case 'subscription codes derive and remain stable' {
-    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'ME-MngEnvMCAP300003-emberger-1') 's1' 'One-digit subscription code mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Contoso-Dev-1') 's1' 'One-digit subscription code mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'example-1234') 's1234' 'Four-digit subscription code mismatch.'
-    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Sandbox') 's2' 'Delimited s<N> token mismatch.'
-    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Fabrikam-200002-s1') 's1' 'Final s<N> token mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Contoso-s2-Sandbox') 's2' 'Delimited s<N> token mismatch.'
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Fabrikam-123456-s1') 's1' 'Final s<N> token mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Contoso_S12 Projects') 's12' 's<N> token delimiters mismatch.'
     Assert-Equal (Get-SubscriptionCode -SubscriptionName 'Demo-s2-Projects-3') 's3' 'Numeric suffix must win over an s<N> token.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'Projects2-Dev' } 'Undelimited token must not derive a code.'
-    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'example' -SubscriptionId '00000000-0000-4000-8000-000000000003') 's113c' `
+    Assert-Equal (Get-SubscriptionCode -SubscriptionName 'example' -SubscriptionId 'abcd1234-0000-4000-8000-000000000000') 'sabcd' `
         'Subscription ID fallback mismatch.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example' } 'Missing subscription token must fail.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example-final' } 'Nonnumeric subscription token must fail.'
     Assert-Throws { Get-SubscriptionCode -SubscriptionName 'example-12345' } 'Five-digit subscription token must fail.'
     Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'example-3' -CachedCode 's3') 's3' 'Cached subscription code mismatch.'
     Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'example-3' -CachedCode 's1' } 'Subscription code drift must fail.'
-    Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Sandbox' -CachedCode 's2') 's2' 's<N> cached code mismatch.'
-    Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'MngEnv100001-s2-Sandbox' -CachedCode 's1' } 's<N> code drift must fail.'
+    Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'Contoso-s2-Sandbox' -CachedCode 's2') 's2' 's<N> cached code mismatch.'
+    Assert-Throws { Assert-SubscriptionCode -SubscriptionName 'Contoso-s2-Sandbox' -CachedCode 's1' } 's<N> code drift must fail.'
     Assert-Equal (Assert-SubscriptionCode -SubscriptionName 'Contoso Projects' -CachedCode 's7') 's7' `
         'Explicit code must be accepted for a name without a code.'
 }

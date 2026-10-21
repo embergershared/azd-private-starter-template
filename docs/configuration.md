@@ -73,8 +73,8 @@ CLI while `azd` deploys with its own login. Fix it with
 The environment helper derives `AZURE_SUBSCRIPTION_CODE` from the active
 subscription display name, seeds it with `AZURE_CREATED_ON`, and verifies it on
 later runs. A final hyphen-delimited 1-4 digit token wins
-(`ME-MngEnvMCAP300003-emberger-3` derives `s3`), then a delimited `s<N>` token
-(`MngEnv100001-s2-Sandbox` derives `s2`), then `s` plus the first four hex
+(`Contoso-Projects-3` derives `s3`), then a delimited `s<N>` token
+(`Contoso-s2-Sandbox` derives `s2`), then `s` plus the first four hex
 characters of the subscription ID. For a display name that carries no code you
 can instead choose one with `azd env set AZURE_SUBSCRIPTION_CODE s1` before the
 first provision. If a
@@ -193,11 +193,13 @@ for data migration, retained resources, downtime, and additional cost before
 provisioning an existing environment.
 
 `infra/core/tenant-codes.json` maps each Entra tenant ID to a display name and a
-short code. Preflight fails closed for a tenant that is not listed. Add a tenant
-before its first deployment:
+short code. A repository created from the template starts from
+`tenant-codes.example.json`, whose only entry is a placeholder. Preflight fails
+closed for a tenant that is not listed. Add a tenant before its first
+deployment, and record it in [`docs/targets.md`](targets.md):
 
 ```json
-"00000000-0000-4000-8000-000000000001": { "name": "Contoso", "code": "100001" }
+"<tenant-guid>": { "name": "Contoso", "code": "123456" }
 ```
 
 Changing an existing tenant's code renames, and therefore replaces, every
