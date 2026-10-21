@@ -46,7 +46,7 @@ and rollback/recovery; changing profiles does not guarantee deletion.
 | `AZURE_LOCATION` | Azure region, default design target `eastus2` | all profiles |
 | `DEPLOYMENT_PROFILE` | `core`, `private`, or `full`; hook defaults to `core` | all profiles |
 | `AZURE_REPOSITORY` | Repository name used for the `repository` tag; derived from the git remote by `set-deployment-tags.ps1` | all profiles |
-| `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs | when a VM or role assignments are enabled |
+| `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs: the accounts that sign in to the jumpboxes; `scripts/add-operator.ps1` resolves names and appends | when a VM or role assignments are enabled |
 | `AZURE_FEATURE_OVERRIDES_JSON` | Expert feature object; hook defaults to `{}` | optional |
 
 `AZURE_OPERATOR_PRINCIPAL_IDS` is only required when the deployment grants VM

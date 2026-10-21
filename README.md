@@ -57,6 +57,10 @@ command that registers it, and registers them itself only when you ask:
 .\scripts\preflight.ps1 -RegisterProviders
 ```
 
+Once provisioned, only operators can sign in to a jumpbox, and
+`./scripts/connect-jumpbox.ps1` opens a windowed RDP session through Bastion;
+see [Bastion access](docs/deployment.md#standard-bastion-access-full-profile-only).
+
 Preview is not deployment. Do not run `azd provision` or `azd up` until the
 validation gate and deployment approval are complete.
 

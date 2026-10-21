@@ -39,6 +39,15 @@ module and written to Key Vault. They are never emitted as template outputs and
 never written to `.azure` state. `credentialRotationTag` forces regeneration
 when it changes.
 
+## Access
+
+Only operators can use Entra login: the module grants **Virtual Machine User
+Login** to `operatorPrincipalIds`, and an account without it hangs at the
+second RDP credential prompt. `scripts/add-operator.ps1` adds people or groups
+by name, and `scripts/connect-jumpbox.ps1` opens a windowed RDP session
+through Bastion. See
+[Bastion access](../../../docs/deployment.md#standard-bastion-access-full-profile-only).
+
 ## Parameters
 
 Selected parameters; see `main.bicep` for the full list.

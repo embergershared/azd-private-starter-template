@@ -252,6 +252,65 @@ az network bastion ssh --name <bastion> --resource-group <resource-group> --targ
 See [Bastion native-client access](https://learn.microsoft.com/azure/bastion/connect-vm-native-client-windows).
 Do not add VM public IPs or internet RDP/SSH rules for convenience.
 
+### Who can sign in
+
+Entra VM login works only for the operators: the principals in
+`AZURE_OPERATOR_PRINCIPAL_IDS`, which the deployment grants **Virtual Machine
+User Login**. The bootstrap seeds that value with the account the Azure CLI is
+signed in to, so an account that only connects, or a second person, has to be
+added by hand. Give user principal names, group display names or object IDs;
+the helper resolves them, merges them into the environment and leaves the
+provision to you:
+
+```powershell
+./scripts/add-operator.ps1 -Principal someone@contoso.com, 'Platform Operators'
+azd provision -e <environment>
+```
+
+An account without the role is not refused. The native RDP client accepts the
+first credential prompt, asks again for the VM sign-in and hangs there, often
+on a second MFA code. That symptom means a missing operator role, not the
+tenant's MFA policy: a Conditional Access policy that requires MFA for every
+app still lets the Entra RDP sign-in complete once the role exists.
+
+### A windowed RDP session
+
+`az network bastion rdp` opens the session full screen across every monitor
+and has no display options. `scripts/connect-jumpbox.ps1` downloads the same
+short-lived RDP file from Bastion, sets a windowed desktop of the requested
+size, centers it on the primary monitor and opens it with the Windows Remote
+Desktop client. The Bastion, resource group and VM names come from the azd
+environment's outputs, so it needs a completed `full` provision:
+
+```powershell
+./scripts/connect-jumpbox.ps1
+./scripts/connect-jumpbox.ps1 -Width 1920 -Height 1080 -Scale 125
+```
+
+`-Width` and `-Height` are the desktop size in physical pixels and `-Scale`
+is the display scaling inside the session; the defaults suit a 4K-class
+display at 150 %. Smart sizing is on, so resizing the window scales the
+session. The script runs on Windows only.
+
+### Password fallback
+
+Entra login is the primary path. Each jumpbox also keeps a local
+administrator, `azurelocaladmin` by default, whose password the deployment
+generates and stores in the Key Vault as `windows-admin-password` and
+`linux-admin-password`. Every provision generates a new password and resets
+the account to match, so read it again after each one. In the `full` profile
+the vault is private, so the secret can be read only from inside the virtual
+network, for example from a jumpbox you reached with Entra login:
+
+```powershell
+az keyvault secret show --vault-name <key-vault> --name windows-admin-password --query value --output tsv
+```
+
+To connect with it, run `connect-jumpbox.ps1 -AuthType Password` or the
+`az network bastion rdp` command without `--auth-type AAD`, and sign in as
+`.\azurelocaladmin`. See
+[Entra primary and break glass](security.md#entra-primary-and-break-glass-full-profile-only).
+
 ## Cost, shutdown, and teardown
 
 Check current regional prices before approval. A `core` deployment's only
