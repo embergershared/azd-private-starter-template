@@ -163,7 +163,14 @@ var tenantCode = tenantCodeFor(tenant().tenantId)
 var locationCode = locationCodeFor(location)
 var shortUniqueSuffix = take(uniqueString(subscription().id, environmentName, location), 3)
 
-var resourceGroupName = azName(abbreviations.resourceGroup, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var resourceGroupName = azName(
+  abbreviations.resourceGroup,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  ''
+)
 var vnetName = azName(abbreviations.virtualNetwork, tenantCode, locationCode, subscriptionCode, environmentName, '')
 var bastionNsgName = azName(
   abbreviations.networkSecurityGroup,
@@ -189,7 +196,14 @@ var privateEndpointNsgName = azName(
   environmentName,
   'private-endpoints'
 )
-var jumpboxSubnetName = azName(abbreviations.subnet, tenantCode, locationCode, subscriptionCode, environmentName, 'jumpboxes')
+var jumpboxSubnetName = azName(
+  abbreviations.subnet,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'jumpboxes'
+)
 var privateEndpointSubnetName = azName(
   abbreviations.subnet,
   tenantCode,
@@ -264,19 +278,84 @@ var filePrivateEndpointNicName = azName(
   environmentName,
   'file'
 )
-var logAnalyticsName = azName(abbreviations.logAnalytics, tenantCode, locationCode, subscriptionCode, environmentName, '')
-var appInsightsName = azName(abbreviations.applicationInsights, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var logAnalyticsName = azName(
+  abbreviations.logAnalytics,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  ''
+)
+var appInsightsName = azName(
+  abbreviations.applicationInsights,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  ''
+)
 var natGatewayName = azName(abbreviations.natGateway, tenantCode, locationCode, subscriptionCode, environmentName, '')
-var natGatewayPublicIpName = azName(abbreviations.publicIp, tenantCode, locationCode, subscriptionCode, environmentName, 'nat')
+var natGatewayPublicIpName = azName(
+  abbreviations.publicIp,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'nat'
+)
 var bastionName = azName(abbreviations.bastion, tenantCode, locationCode, subscriptionCode, environmentName, '')
-var bastionPublicIpName = azName(abbreviations.publicIp, tenantCode, locationCode, subscriptionCode, environmentName, 'bastion')
-var windowsVmName = azName(abbreviations.windowsVirtualMachine, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var bastionPublicIpName = azName(
+  abbreviations.publicIp,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'bastion'
+)
+var windowsVmName = azName(
+  abbreviations.windowsVirtualMachine,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  ''
+)
 var windowsComputerName = shortName('w', environmentName, shortUniqueSuffix, 15)
-var windowsNicName = azName(abbreviations.networkInterface, tenantCode, locationCode, subscriptionCode, environmentName, 'win')
-var linuxVmName = azName(abbreviations.linuxVirtualMachine, tenantCode, locationCode, subscriptionCode, environmentName, '')
-var linuxNicName = azName(abbreviations.networkInterface, tenantCode, locationCode, subscriptionCode, environmentName, 'lin')
+var windowsNicName = azName(
+  abbreviations.networkInterface,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'win'
+)
+var linuxVmName = azName(
+  abbreviations.linuxVirtualMachine,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  ''
+)
+var linuxNicName = azName(
+  abbreviations.networkInterface,
+  tenantCode,
+  locationCode,
+  subscriptionCode,
+  environmentName,
+  'lin'
+)
 
-var tags = commonTags(repository, tenantCode, environmentName, resolvedProfile, createdOn, lastUpdatedOn, owner, costCenter)
+var tags = commonTags(
+  repository,
+  tenantCode,
+  environmentName,
+  resolvedProfile,
+  createdOn,
+  lastUpdatedOn,
+  owner,
+  costCenter
+)
 
 // Profile defaults resolve here rather than in parameter defaults, which may
 // only reference other parameters. An explicitly supplied value always wins,

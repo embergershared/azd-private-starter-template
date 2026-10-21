@@ -34,7 +34,10 @@ param readerPrincipalIds array = []
 ])
 param readerPrincipalType string = 'ServicePrincipal'
 
-var mapsDataReaderRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '423170ca-a8f6-4b0f-8487-9e4eb8f49bfa')
+var mapsDataReaderRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '423170ca-a8f6-4b0f-8487-9e4eb8f49bfa'
+)
 
 resource maps 'Microsoft.Maps/accounts@2023-06-01' = {
   name: name
