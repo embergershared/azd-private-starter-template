@@ -36,6 +36,12 @@ param containerAppsSubnetName string = ''
 param containerAppsNetworkSecurityGroupName string = ''
 
 var deployContainerAppsSubnet = !empty(containerAppsSubnetPrefix)
+// Bicep turns every NSG the virtual network references into a dependsOn
+// resource ID, and ARM evaluates those IDs even for a conditional NSG it will
+// not deploy. With the subnet skipped the name parameter is empty, the ID is
+// malformed and template validation fails, so the skipped NSG gets a
+// placeholder name instead. Nothing is ever deployed under it.
+var containerAppsNsgName = deployContainerAppsSubnet ? containerAppsNetworkSecurityGroupName : 'not-deployed'
 
 var bastionSubnetName = 'AzureBastionSubnet'
 
@@ -361,7 +367,7 @@ resource privateEndpointNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01'
 // (rather than leaving the subnet bare) also keeps policy-generated NSGs, with
 // names outside the convention, from being attached.
 resource containerAppsNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = if (deployContainerAppsSubnet) {
-  name: containerAppsNetworkSecurityGroupName
+  name: containerAppsNsgName
   location: location
   tags: tags
   properties: {

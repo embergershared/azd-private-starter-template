@@ -193,8 +193,9 @@ subscription. To target another one:
 
 Run the test suite, then preview. The suite covers naming equivalence and
 name-rule compliance, module catalog conformance, `az bicep build` and
-`az bicep lint` over `infra/main.bicep` and every catalog module, and the
-`core`/`private`/`full` profile matrix. The pre-provision hook then checks
+`az bicep lint` over `infra/main.bicep` and every catalog module, the shape of
+every module's dependency resource IDs with optional inputs at their defaults,
+and the `core`/`private`/`full` profile matrix. The pre-provision hook then checks
 configuration dependencies, provider registration for the modules actually
 enabled, target location, and — only when the relevant feature is on — operator
 IDs, VM SKU quota/restrictions, and Windows image visibility.

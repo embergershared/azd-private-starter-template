@@ -423,6 +423,32 @@ function Invoke-ArmCall {
         'base64ToString' {
             return [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string] $values[0]))
         }
+        'copyIndex' {
+            # Enough to evaluate a copy loop's dependsOn once: the shape of the
+            # resource ID is the same for every iteration.
+            return 0
+        }
+        'resourceId' {
+            # Mirrors ARM's segment layout so a test can inspect the ID's shape.
+            # The subscription and resource group are fixed stand-ins, and an
+            # empty name stays an empty segment, the malformed ID ARM rejects,
+            # instead of being dropped.
+            $typeIndex = 0
+            while ($typeIndex -lt $values.Count -and ([string] $values[$typeIndex]) -notlike '*/*') { $typeIndex++ }
+            if ($typeIndex -ge $values.Count) {
+                throw "resourceId() received no resource type: $($values -join ', ')"
+            }
+            $typeSegments = @(([string] $values[$typeIndex]).Split('/'))
+            $names = @($values | Select-Object -Skip ($typeIndex + 1) | ForEach-Object { [string] $_ })
+            if ($names.Count -ne ($typeSegments.Count - 1)) {
+                throw "resourceId() type '$($values[$typeIndex])' takes $($typeSegments.Count - 1) name(s) but received $($names.Count)."
+            }
+            $id = '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/' + $typeSegments[0]
+            for ($i = 0; $i -lt $names.Count; $i++) {
+                $id += '/' + $typeSegments[$i + 1] + '/' + $names[$i]
+            }
+            return $id
+        }
         default {
             throw "ARM function '$name' is not supported by the naming expression evaluator. Add it deliberately, with a test."
         }
