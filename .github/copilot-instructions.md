@@ -44,7 +44,7 @@ guidance.
   `azure-validate` proves policy, quota, syntax, dependency, and preview checks,
   and `azure-deploy` changes Azure only after explicit approval. Do not collapse
   these phases.
-- Preserve the `minimal` and `full` profiles and validate expert overrides.
+- Preserve the `core`, `private` and `full` profiles and validate expert overrides.
   Full-profile Entra VM login depends on NAT. An air-gapped override must set
   both `natGateway` and `entraLogin` to `false`.
 

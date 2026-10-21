@@ -244,17 +244,10 @@ Test-Case 'the full profile adds Bastion and the jumpboxes' {
     }
 }
 
-Test-Case 'the deprecated minimal profile still resolves to private' {
-    $legacy = Get-ProfileFeatureFlags -Template $template -ProfileName 'minimal'
-    $private = Get-ProfileFeatureFlags -Template $template -ProfileName 'private'
-
-    Assert-Equal -Actual $legacy.resolvedProfile -Expected 'private' `
-        -Message "'minimal' must map to 'private' so environments provisioned before the ladder keep working."
-
-    foreach ($flag in ($private.Keys | Where-Object { $_ -ne 'resolvedProfile' })) {
-        Assert-Equal -Actual $legacy[$flag] -Expected $private[$flag] `
-            -Message "'minimal' and 'private' disagree on '$flag'."
-    }
+Test-Case 'the template accepts only the three ladder profiles' {
+    $allowed = @($template.parameters.deploymentProfile.allowedValues)
+    Assert-Equal -Actual ($allowed -join ',') -Expected 'core,private,full' `
+        -Message 'deploymentProfile must allow exactly core, private and full; the retired minimal alias must stay rejected.'
 }
 
 Test-Case 'the profiles stay cumulative' {

@@ -6,7 +6,7 @@
 
 ## Core Context
 
-Reusable infrastructure-only Azure PoC starter with minimal and full deployment profiles.
+Reusable infrastructure-only Azure PoC starter with core, private and full deployment profiles.
 
 ## Recent Updates
 

@@ -27,9 +27,8 @@ azd env set DEPLOYMENT_PROFILE core # core, private, or full
 those are [catalog modules](modules.md) a project opts into, and in `core` they
 deploy public-with-firewall because there is no private endpoint subnet.
 
-`minimal` is accepted as a deprecated alias for `private`. Preflight emits a
-warning and resolves it to `private`; update the environment with
-`azd env set DEPLOYMENT_PROFILE private`.
+Any other value, including the retired `minimal` profile, fails preflight.
+Switch such an environment with `azd env set DEPLOYMENT_PROFILE private`.
 
 Moving down the ladder stops deploying disabled resources. ARM incremental
 deployments can retain previously deployed resources, which may continue billing.

@@ -179,12 +179,13 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
 }
 
 $hookScenarios = @(
-    foreach ($profile in @('', 'private', 'minimal', 'full')) {
+    foreach ($profile in @('', 'private', 'full')) {
         @{ Name = "azd profile '$profile'"; Profile = $profile; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '11111111-1111-1111-1111-111111111111' }
     }
     @{ Name = 'the subscription taken from the Azure CLI'; Profile = ''; SubscriptionId = $null; Active = '11111111-1111-1111-1111-111111111111' }
     @{ Name = 'an Azure CLI on another subscription'; Profile = ''; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '33333333-3333-3333-3333-333333333333'; Fails = 'differs from AZURE_SUBSCRIPTION_ID' }
     @{ Name = 'no Azure CLI login'; Profile = ''; SubscriptionId = $null; Active = ''; Fails = 'Unable to determine AZURE_SUBSCRIPTION_ID' }
+    @{ Name = "the retired azd profile 'minimal'"; Profile = 'minimal'; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '11111111-1111-1111-1111-111111111111'; Fails = "received 'minimal'.*azd env set DEPLOYMENT_PROFILE private"; Reason = 'The retired minimal profile must be rejected with guidance to switch to private.' }
 )
 foreach ($scenario in $hookScenarios) {
     Test-Case "adopted hook executes copied dependencies with $($scenario.Name)" {
@@ -243,7 +244,8 @@ foreach ($scenario in $hookScenarios) {
                     $message = ''
                     try { & ([scriptblock]::Create($body)) | Out-Null }
                     catch { $message = $_.Exception.Message }
-                    Assert-Match -Actual $message -Pattern $scenario.Fails -Message 'The hook must stop before deploying to an unconfirmed subscription.'
+                    $reason = if ($scenario.ContainsKey('Reason')) { $scenario.Reason } else { 'The hook must stop before deploying to an unconfirmed subscription.' }
+                    Assert-Match -Actual $message -Pattern $scenario.Fails -Message $reason
                     return
                 }
                 $execution = (& ([scriptblock]::Create($body))) -join "`n"
@@ -251,7 +253,7 @@ foreach ($scenario in $hookScenarios) {
             catch { throw "$($_.Exception.Message)`n$($_.ScriptStackTrace)" }
             finally { Pop-Location }
             Assert-Equal -Actual $values.AZURE_SUBSCRIPTION_ID -Expected $scenario.Active -Message 'The environment must target the Azure CLI subscription.'
-            $expected = if (-not $profile) { 'core' } elseif ($profile -eq 'minimal') { 'private' } else { $profile }
+            $expected = if ($profile) { $profile } else { 'core' }
             Assert-Match -Actual $execution -Pattern "using profile '$expected'" -Message 'Real copied scripts must resolve the persisted profile.'
             Assert-Equal -Actual $values.DEPLOYMENT_PROFILE -Expected $(if ($profile) { $profile } else { 'core' }) -Message 'Only missing profile may be initialized.'
         }
