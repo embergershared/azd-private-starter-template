@@ -83,9 +83,8 @@ Profiles are a cumulative ladder. Each rung adds to the one below it:
 does not force Key Vault or Storage on a project either — those are catalog
 modules you opt into.
 
-`minimal` is accepted as a deprecated alias for `private` and emits a warning.
-Update existing environments with
-`azd env set DEPLOYMENT_PROFILE private`.
+Any other value fails preflight. Environments still set to the retired
+`minimal` profile must switch with `azd env set DEPLOYMENT_PROFILE private`.
 
 Moving down the ladder stops deploying disabled resources; ARM incremental
 deployments can retain the existing VNet, Bastion, VMs and other resources, which

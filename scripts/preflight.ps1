@@ -54,21 +54,12 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($deploymentProfile)) {
 }
 $deploymentProfile = $deploymentProfile.Trim()
 
-# 'minimal' was the pre-0.2.0 name for 'private'. It is still accepted so an
-# environment provisioned before the three-rung ladder keeps deploying, but it
-# is reported so the value can be migrated.
-$resolvedProfile = $deploymentProfile
-if ($deploymentProfile -eq 'minimal') {
-    $resolvedProfile = 'private'
-    Write-Warning "DEPLOYMENT_PROFILE 'minimal' is deprecated and now maps to 'private'. Run: azd env set DEPLOYMENT_PROFILE private"
+if ($deploymentProfile -notin $knownProfiles) {
+    throw "DEPLOYMENT_PROFILE must be one of: $($knownProfiles -join ', '); received '$deploymentProfile'. Set a supported value, for example: azd env set DEPLOYMENT_PROFILE private"
 }
 
-if ($resolvedProfile -notin $knownProfiles) {
-    throw "DEPLOYMENT_PROFILE must be one of: $($knownProfiles -join ', '); received '$deploymentProfile'."
-}
-
-$isPrivateOrHigher = $resolvedProfile -ne 'core'
-$isFull = $resolvedProfile -eq 'full'
+$isPrivateOrHigher = $deploymentProfile -ne 'core'
+$isFull = $deploymentProfile -eq 'full'
 
 # ---------------------------------------------------------------------------
 # Feature resolution - mirrors the featureSettings block of infra/main.bicep
@@ -156,8 +147,8 @@ $moduleEnabled = @{
 $enabledModules = @(Get-EnabledCatalogModules -Modules $catalog.modules -Features $featureSettings -Composition $moduleEnabled)
 foreach ($module in $enabledModules) {
     $name = [string] $module['name']
-    if ($module['profiles'] -notcontains $resolvedProfile) {
-        Write-Warning "Module '$name' is enabled by an override but is not part of the '$resolvedProfile' profile."
+    if ($module['profiles'] -notcontains $deploymentProfile) {
+        Write-Warning "Module '$name' is enabled by an override but is not part of the '$deploymentProfile' profile."
     }
 
 }
@@ -347,6 +338,6 @@ if ($requestedChecks.Contains('vcpuQuota')) {
 }
 
 $moduleList = ($enabledModules | ForEach-Object { $_['name'] }) -join ', '
-Write-Output "Preflight passed for environment '$environmentName' using profile '$resolvedProfile' in '$location' ($locationCode), tenant code '$tenantCode' and subscription code '$cachedSubscriptionCode'."
+Write-Output "Preflight passed for environment '$environmentName' using profile '$deploymentProfile' in '$location' ($locationCode), tenant code '$tenantCode' and subscription code '$cachedSubscriptionCode'."
 Write-Output "Modules: $moduleList"
 Write-Output "Providers verified: $($providers -join ', ')"
