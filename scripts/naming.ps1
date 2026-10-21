@@ -22,7 +22,7 @@ function Get-SubscriptionCode {
 }
 
 # The code a display name carries: a '-<N>' suffix ('Demo-3' => s3) or a delimited
-# 's<N>' token ('MngEnv567410-s2-Projects' => s2). Returns '' when there is none.
+# 's<N>' token ('MngEnv567410-s2-Sandbox' => s2). Returns '' when there is none.
 function Get-SubscriptionNameCode {
     param(
         [Parameter(Mandatory)]
@@ -64,6 +64,33 @@ function Assert-SubscriptionCode {
     }
 
     return $derivedCode
+}
+
+# The subscription the Azure CLI is signed in to, or '' when there is none.
+function Get-ActiveSubscriptionId {
+    $active = & az account show --query id --output tsv --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($active)) {
+        return ''
+    }
+
+    return ([string] $active).Trim()
+}
+
+# The scripts query Azure through the az CLI while azd deploys with its own
+# login, so both must target the same subscription (and therefore tenant).
+function Assert-DeploymentSubscription {
+    param(
+        [Parameter(Mandatory)]
+        [string] $SubscriptionId
+    )
+
+    $active = Get-ActiveSubscriptionId
+    if (-not $active) {
+        throw 'Unable to read the active Azure CLI subscription. Run az login.'
+    }
+    if ($active -ne $SubscriptionId.Trim()) {
+        throw "The Azure CLI subscription '$active' differs from AZURE_SUBSCRIPTION_ID '$($SubscriptionId.Trim())'. Run: az account set --subscription $($SubscriptionId.Trim())"
+    }
 }
 
 function Get-LocationCode {

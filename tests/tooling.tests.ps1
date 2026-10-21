@@ -178,8 +178,17 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
     finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }
 
-foreach ($profile in @('', 'private', 'minimal', 'full')) {
-    Test-Case "adopted hook executes copied dependencies with azd profile '$profile'" {
+$hookScenarios = @(
+    foreach ($profile in @('', 'private', 'minimal', 'full')) {
+        @{ Name = "azd profile '$profile'"; Profile = $profile; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '11111111-1111-1111-1111-111111111111' }
+    }
+    @{ Name = 'the subscription taken from the Azure CLI'; Profile = ''; SubscriptionId = $null; Active = '11111111-1111-1111-1111-111111111111' }
+    @{ Name = 'an Azure CLI on another subscription'; Profile = ''; SubscriptionId = '11111111-1111-1111-1111-111111111111'; Active = '33333333-3333-3333-3333-333333333333'; Fails = 'differs from AZURE_SUBSCRIPTION_ID' }
+    @{ Name = 'no Azure CLI login'; Profile = ''; SubscriptionId = $null; Active = ''; Fails = 'Unable to determine AZURE_SUBSCRIPTION_ID' }
+)
+foreach ($scenario in $hookScenarios) {
+    Test-Case "adopted hook executes copied dependencies with $($scenario.Name)" {
+        $profile = $scenario.Profile
         $root = New-ToolingFixture
         try {
             $target = Join-Path $root 'adopted'
@@ -190,10 +199,10 @@ foreach ($profile in @('', 'private', 'minimal', 'full')) {
             $body = ($hook -split "`n" | Where-Object { $_ -match '^      ' } | ForEach-Object { $_.Substring(6) }) -join "`n"
             $values = @{
                 DEPLOYMENT_PROFILE = $profile; AZURE_REPOSITORY = 'fixture'
-                AZURE_SUBSCRIPTION_ID = '11111111-1111-1111-1111-111111111111'
                 AZURE_SUBSCRIPTION_CODE = 's1'; AZURE_LOCATION = 'eastus'; AZURE_ENV_NAME = 'fixture'
                 AZURE_FEATURE_OVERRIDES_JSON = '{}'; AZURE_OPERATOR_PRINCIPAL_IDS = ''
             }
+            if ($scenario.SubscriptionId) { $values.AZURE_SUBSCRIPTION_ID = $scenario.SubscriptionId }
             if ($profile -eq 'full') { $values.AZURE_OPERATOR_PRINCIPAL_IDS = '22222222-2222-2222-2222-222222222222' }
             function azd {
                 $global:LASTEXITCODE = 0
@@ -210,6 +219,10 @@ foreach ($profile in @('', 'private', 'minimal', 'full')) {
                 $global:LASTEXITCODE = 0
                 switch ("$($args[0]) $($args[1])") {
                     'account show' {
+                        if ($args -contains 'id') {
+                            if (-not $scenario.Active) { $global:LASTEXITCODE = 1 }
+                            return $scenario.Active
+                        }
                         if ($args -contains 'tsv') { return 'fixture-1' }
                         return '{"name":"fixture-1","state":"Enabled","tenantId":"dd045087-7959-4625-81a9-bf44022f1aa8"}'
                     }
@@ -222,9 +235,19 @@ foreach ($profile in @('', 'private', 'minimal', 'full')) {
                 }
             }
             Push-Location $target
-            try { $execution = (& ([scriptblock]::Create($body))) -join "`n" }
+            try {
+                if ($scenario.ContainsKey('Fails')) {
+                    $message = ''
+                    try { & ([scriptblock]::Create($body)) | Out-Null }
+                    catch { $message = $_.Exception.Message }
+                    Assert-Match -Actual $message -Pattern $scenario.Fails -Message 'The hook must stop before deploying to an unconfirmed subscription.'
+                    return
+                }
+                $execution = (& ([scriptblock]::Create($body))) -join "`n"
+            }
             catch { throw "$($_.Exception.Message)`n$($_.ScriptStackTrace)" }
             finally { Pop-Location }
+            Assert-Equal -Actual $values.AZURE_SUBSCRIPTION_ID -Expected $scenario.Active -Message 'The environment must target the Azure CLI subscription.'
             $expected = if (-not $profile) { 'core' } elseif ($profile -eq 'minimal') { 'private' } else { $profile }
             Assert-Match -Actual $execution -Pattern "using profile '$expected'" -Message 'Real copied scripts must resolve the persisted profile.'
             Assert-Equal -Actual $values.DEPLOYMENT_PROFILE -Expected $(if ($profile) { $profile } else { 'core' }) -Message 'Only missing profile may be initialized.'

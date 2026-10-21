@@ -184,6 +184,7 @@ if (
 ) {
     throw 'AZURE_SUBSCRIPTION_ID must be a non-empty GUID.'
 }
+Assert-DeploymentSubscription -SubscriptionId $subscriptionId
 
 $account = Invoke-AzJson -Arguments @('account', 'show', '--subscription', $subscriptionId)
 if ($account.state -ne 'Enabled') {
