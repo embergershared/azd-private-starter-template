@@ -22,7 +22,7 @@ function Get-SubscriptionCode {
 }
 
 # The code a display name carries: a '-<N>' suffix ('Demo-3' => s3) or a delimited
-# 's<N>' token ('MngEnv567410-s2-Sandbox' => s2). Returns '' when there is none.
+# 's<N>' token ('Contoso-s2-Sandbox' => s2). Returns '' when there is none.
 function Get-SubscriptionNameCode {
     param(
         [Parameter(Mandatory)]
