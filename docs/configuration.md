@@ -27,9 +27,8 @@ azd env set DEPLOYMENT_PROFILE core # core, private, or full
 those are [catalog modules](modules.md) a project opts into, and in `core` they
 deploy public-with-firewall because there is no private endpoint subnet.
 
-`minimal` is accepted as a deprecated alias for `private`. Preflight emits a
-warning and resolves it to `private`; update the environment with
-`azd env set DEPLOYMENT_PROFILE private`.
+Any other value, including the retired `minimal` profile, fails preflight.
+Switch such an environment with `azd env set DEPLOYMENT_PROFILE private`.
 
 Moving down the ladder stops deploying disabled resources. ARM incremental
 deployments can retain previously deployed resources, which may continue billing.
@@ -47,7 +46,7 @@ and rollback/recovery; changing profiles does not guarantee deletion.
 | `AZURE_LOCATION` | Azure region, default design target `eastus2` | all profiles |
 | `DEPLOYMENT_PROFILE` | `core`, `private`, or `full`; hook defaults to `core` | all profiles |
 | `AZURE_REPOSITORY` | Repository name used for the `repository` tag; derived from the git remote by `set-deployment-tags.ps1` | all profiles |
-| `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs | when a VM or role assignments are enabled |
+| `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs: the accounts that sign in to the jumpboxes; `scripts/add-operator.ps1` resolves names and appends | when a VM or role assignments are enabled |
 | `AZURE_FEATURE_OVERRIDES_JSON` | Expert feature object; hook defaults to `{}` | optional |
 
 `AZURE_OPERATOR_PRINCIPAL_IDS` is only required when the deployment grants VM
@@ -124,6 +123,11 @@ Conditional checks run only when the relevant feature is enabled:
 
 A `core` deployment therefore performs no `Microsoft.Network` or
 `Microsoft.Compute` calls at all.
+
+When a provider is unregistered, the failure lists the `az provider register`
+command for each one. Running `./scripts/preflight.ps1 -RegisterProviders` by
+hand registers them and continues; the `preprovision` hook never passes that
+switch. See [resource providers](deployment.md#resource-providers).
 
 ## Expert feature overrides
 

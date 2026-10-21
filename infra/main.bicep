@@ -23,12 +23,11 @@ param location string = 'eastus2'
 @maxLength(5)
 param subscriptionCode string
 
-@description('Deployment profile. core deploys the resource group, tags and monitoring only. private adds the virtual network, private DNS and private Key Vault and storage. full adds Bastion, jumpbox VMs, NAT Gateway and Entra login. minimal is a deprecated alias for private.')
+@description('Deployment profile. core deploys the resource group, tags and monitoring only. private adds the virtual network, private DNS and private Key Vault and storage. full adds Bastion, jumpbox VMs, NAT Gateway and Entra login.')
 @allowed([
   'core'
   'private'
   'full'
-  'minimal'
 ])
 param deploymentProfile string = 'core'
 
@@ -55,11 +54,8 @@ param createdOn string
 @maxLength(25)
 param lastUpdatedOn string
 
-// `minimal` is accepted so environments provisioned before the three-rung
-// ladder keep working. Every downstream decision uses resolvedProfile.
-var resolvedProfile = deploymentProfile == 'minimal' ? 'private' : deploymentProfile
-var isPrivateOrHigher = resolvedProfile != 'core'
-var isFull = resolvedProfile == 'full'
+var isPrivateOrHigher = deploymentProfile != 'core'
+var isFull = deploymentProfile == 'full'
 
 @description('Deploy the virtual network, subnets, NSGs and private DNS. Defaults on for private and full.')
 param enableNetwork bool?
@@ -350,7 +346,7 @@ var tags = commonTags(
   repository,
   tenantCode,
   environmentName,
-  resolvedProfile,
+  deploymentProfile,
   createdOn,
   lastUpdatedOn,
   owner,
@@ -556,7 +552,7 @@ resource deployedKeyVault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
 }
 
 output AZURE_RESOURCE_GROUP string = resourceGroup.name
-output AZURE_DEPLOYMENT_PROFILE string = resolvedProfile
+output AZURE_DEPLOYMENT_PROFILE string = deploymentProfile
 output AZURE_VIRTUAL_NETWORK_NAME string = deployNetwork ? network!.outputs.virtualNetworkName : ''
 output AZURE_KEY_VAULT_NAME string = deployKeyVault ? keyVault!.outputs.name : ''
 output AZURE_STORAGE_ACCOUNT_NAME string = deployStorage ? storage!.outputs.name : ''
