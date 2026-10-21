@@ -97,9 +97,14 @@ a module has been provisioned anywhere, changing them replaces resources.
 <!-- BEGIN GENERATED: module-table -->
 | Module | Kind | Abbreviation | Profiles | Feature flag | Providers |
 |---|---|---|---|---|---|
+| [`ai-foundry`](../infra/modules/ai-foundry/README.md) | resource | `aif`, `proj` | `core`, `full`, `private` | `aiFoundry` | `Microsoft.CognitiveServices` |
 | [`bastion`](../infra/modules/bastion/README.md) | resource | `bast` | `full` | `bastion` | `Microsoft.Network` |
+| [`container-apps-environment`](../infra/modules/container-apps-environment/README.md) | resource | `cae` | `core`, `full`, `private` | `containerAppsEnvironment` | `Microsoft.App`, `Microsoft.OperationalInsights` |
+| [`container-registry`](../infra/modules/container-registry/README.md) | resource | `cr` | `core`, `full`, `private` | `containerRegistry` | `Microsoft.ContainerRegistry` |
 | [`jumpboxes`](../infra/modules/jumpboxes/README.md) | composite | `vm-win`, `vm-lin`, `nic` | `full` | `windowsVm` | `Microsoft.Compute`, `Microsoft.DevTestLab`, `Microsoft.Network` |
 | [`key-vault`](../infra/modules/key-vault/README.md) | resource | `kv` | `core`, `full`, `private` | `keyVault` | `Microsoft.KeyVault` |
+| [`managed-identity`](../infra/modules/managed-identity/README.md) | resource | `id` | `core`, `full`, `private` | `managedIdentity` | `Microsoft.ManagedIdentity` |
+| [`maps`](../infra/modules/maps/README.md) | resource | `map` | `core`, `full`, `private` | `maps` | `Microsoft.Maps` |
 | [`monitoring`](../infra/modules/monitoring/README.md) | composite | `law` | `core`, `full`, `private` | – | `Microsoft.Insights`, `Microsoft.OperationalInsights` |
 | [`nat-gateway`](../infra/modules/nat-gateway/README.md) | resource | `natgw` | `full`, `private` | `natGateway` | `Microsoft.Network` |
 | [`network`](../infra/modules/network/README.md) | composite | `vnet` | `full`, `private` | `network` | `Microsoft.Network` |

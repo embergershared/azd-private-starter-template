@@ -223,9 +223,10 @@ function Get-BicepRenderedNames {
         Evaluates every resource-name variable in the compiled infra/main.bicep
         for one set of inputs, entirely offline.
     .DESCRIPTION
-        `shortUniqueSuffix` wraps uniqueString(subscription().id, ...), which has
-        no offline value, so it is pinned through the Variables override. The
-        naming algorithm only ever consumes it as an opaque string.
+        `shortUniqueSuffix` wraps uniqueString(subscription().id, ...) and
+        `tenantCode` wraps tenant().tenantId; neither has an offline value, so
+        both are pinned through the Variables override. An empty TenantCode
+        renders the pre-tenant names the legacy proof compares against.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -234,7 +235,10 @@ function Get-BicepRenderedNames {
         [Parameter(Mandatory)] [string] $LocationCode,
         [Parameter(Mandatory)] [string] $SubscriptionCode,
         [Parameter(Mandatory)] [string] $EnvironmentName,
-        [Parameter(Mandatory)] [string] $ShortUniqueSuffix
+        [Parameter(Mandatory)] [string] $ShortUniqueSuffix,
+
+        [AllowEmptyString()]
+        [string] $TenantCode = ''
     )
 
     $parameters = @{
@@ -242,7 +246,7 @@ function Get-BicepRenderedNames {
         subscriptionCode = $SubscriptionCode
         environmentName  = $EnvironmentName
     }
-    $variables = @{ shortUniqueSuffix = $ShortUniqueSuffix }
+    $variables = @{ shortUniqueSuffix = $ShortUniqueSuffix; tenantCode = $TenantCode }
 
     $rendered = @{}
     foreach ($pair in (Get-NameVariableMap).GetEnumerator()) {

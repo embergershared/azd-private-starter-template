@@ -2,6 +2,7 @@ targetScope = 'subscription'
 
 import {
   abbreviations
+  tenantCodeFor
   locationCodeFor
   azName
   globalName
@@ -17,7 +18,7 @@ param environmentName string
 @description('Azure region for the resource group and regional resources.')
 param location string = 'eastus2'
 
-@description('Stable code derived from the final numeric token of the Azure subscription display name.')
+@description('Stable s<N> code derived from the Azure subscription display name (or ID); see scripts/naming.ps1.')
 @minLength(2)
 @maxLength(5)
 param subscriptionCode string
@@ -157,13 +158,16 @@ param shutdownTime string = '1900'
 @description('Windows time zone ID used by Azure DevTest Lab auto-shutdown schedules.')
 param shutdownTimeZone string = 'Eastern Standard Time'
 
+// Resolved from infra/core/tenant-codes.json; an unlisted tenant fails here and in preflight.
+var tenantCode = tenantCodeFor(tenant().tenantId)
 var locationCode = locationCodeFor(location)
 var shortUniqueSuffix = take(uniqueString(subscription().id, environmentName, location), 3)
 
-var resourceGroupName = azName(abbreviations.resourceGroup, locationCode, subscriptionCode, environmentName, '')
-var vnetName = azName(abbreviations.virtualNetwork, locationCode, subscriptionCode, environmentName, '')
+var resourceGroupName = azName(abbreviations.resourceGroup, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var vnetName = azName(abbreviations.virtualNetwork, tenantCode, locationCode, subscriptionCode, environmentName, '')
 var bastionNsgName = azName(
   abbreviations.networkSecurityGroup,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -171,6 +175,7 @@ var bastionNsgName = azName(
 )
 var jumpboxNsgName = azName(
   abbreviations.networkSecurityGroup,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -178,14 +183,16 @@ var jumpboxNsgName = azName(
 )
 var privateEndpointNsgName = azName(
   abbreviations.networkSecurityGroup,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
   'private-endpoints'
 )
-var jumpboxSubnetName = azName(abbreviations.subnet, locationCode, subscriptionCode, environmentName, 'jumpboxes')
+var jumpboxSubnetName = azName(abbreviations.subnet, tenantCode, locationCode, subscriptionCode, environmentName, 'jumpboxes')
 var privateEndpointSubnetName = azName(
   abbreviations.subnet,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -202,6 +209,7 @@ var keyVaultName = globalName(
 )
 var keyVaultPrivateEndpointName = azName(
   abbreviations.privateEndpoint,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -209,6 +217,7 @@ var keyVaultPrivateEndpointName = azName(
 )
 var keyVaultPrivateEndpointNicName = azName(
   abbreviations.privateEndpointNetworkInterface,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -225,6 +234,7 @@ var storageAccountName = globalName(
 )
 var blobPrivateEndpointName = azName(
   abbreviations.privateEndpoint,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -232,6 +242,7 @@ var blobPrivateEndpointName = azName(
 )
 var blobPrivateEndpointNicName = azName(
   abbreviations.privateEndpointNetworkInterface,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -239,6 +250,7 @@ var blobPrivateEndpointNicName = azName(
 )
 var filePrivateEndpointName = azName(
   abbreviations.privateEndpoint,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
@@ -246,24 +258,25 @@ var filePrivateEndpointName = azName(
 )
 var filePrivateEndpointNicName = azName(
   abbreviations.privateEndpointNetworkInterface,
+  tenantCode,
   locationCode,
   subscriptionCode,
   environmentName,
   'file'
 )
-var logAnalyticsName = azName(abbreviations.logAnalytics, locationCode, subscriptionCode, environmentName, '')
-var appInsightsName = azName(abbreviations.applicationInsights, locationCode, subscriptionCode, environmentName, '')
-var natGatewayName = azName(abbreviations.natGateway, locationCode, subscriptionCode, environmentName, '')
-var natGatewayPublicIpName = azName(abbreviations.publicIp, locationCode, subscriptionCode, environmentName, 'nat')
-var bastionName = azName(abbreviations.bastion, locationCode, subscriptionCode, environmentName, '')
-var bastionPublicIpName = azName(abbreviations.publicIp, locationCode, subscriptionCode, environmentName, 'bastion')
-var windowsVmName = azName(abbreviations.windowsVirtualMachine, locationCode, subscriptionCode, environmentName, '')
+var logAnalyticsName = azName(abbreviations.logAnalytics, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var appInsightsName = azName(abbreviations.applicationInsights, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var natGatewayName = azName(abbreviations.natGateway, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var natGatewayPublicIpName = azName(abbreviations.publicIp, tenantCode, locationCode, subscriptionCode, environmentName, 'nat')
+var bastionName = azName(abbreviations.bastion, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var bastionPublicIpName = azName(abbreviations.publicIp, tenantCode, locationCode, subscriptionCode, environmentName, 'bastion')
+var windowsVmName = azName(abbreviations.windowsVirtualMachine, tenantCode, locationCode, subscriptionCode, environmentName, '')
 var windowsComputerName = shortName('w', environmentName, shortUniqueSuffix, 15)
-var windowsNicName = azName(abbreviations.networkInterface, locationCode, subscriptionCode, environmentName, 'win')
-var linuxVmName = azName(abbreviations.linuxVirtualMachine, locationCode, subscriptionCode, environmentName, '')
-var linuxNicName = azName(abbreviations.networkInterface, locationCode, subscriptionCode, environmentName, 'lin')
+var windowsNicName = azName(abbreviations.networkInterface, tenantCode, locationCode, subscriptionCode, environmentName, 'win')
+var linuxVmName = azName(abbreviations.linuxVirtualMachine, tenantCode, locationCode, subscriptionCode, environmentName, '')
+var linuxNicName = azName(abbreviations.networkInterface, tenantCode, locationCode, subscriptionCode, environmentName, 'lin')
 
-var tags = commonTags(repository, environmentName, resolvedProfile, createdOn, lastUpdatedOn, owner, costCenter)
+var tags = commonTags(repository, tenantCode, environmentName, resolvedProfile, createdOn, lastUpdatedOn, owner, costCenter)
 
 // Profile defaults resolve here rather than in parameter defaults, which may
 // only reference other parameters. An explicitly supplied value always wins,
