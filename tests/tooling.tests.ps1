@@ -149,7 +149,7 @@ Test-Case 'new-module to add-module completed snippet compiles and repeat wiring
 targetScope = 'subscription'
 import { azName, abbreviations } from './core/naming.bicep'
 param location string = 'eastus'
-var tenantCode = '567410'
+var tenantCode = '123456'
 var locationCode = 'eus'
 var subscriptionCode = 's1'
 var environmentName = 'test'
@@ -190,6 +190,9 @@ foreach ($scenario in $hookScenarios) {
     Test-Case "adopted hook executes copied dependencies with $($scenario.Name)" {
         $profile = $scenario.Profile
         $root = New-ToolingFixture
+        # Any approved tenant will do, so the test passes against the real and the example catalog.
+        $approvedTenantId = @((Get-Content -LiteralPath (Join-Path $root 'infra/core/tenant-codes.json') -Raw |
+                    ConvertFrom-Json -AsHashtable).Keys)[0]
         try {
             $target = Join-Path $root 'adopted'
             New-Item -ItemType Directory -Path (Join-Path $target 'infra/modules') -Force | Out-Null
@@ -224,7 +227,7 @@ foreach ($scenario in $hookScenarios) {
                             return $scenario.Active
                         }
                         if ($args -contains 'tsv') { return 'fixture-1' }
-                        return '{"name":"fixture-1","state":"Enabled","tenantId":"dd045087-7959-4625-81a9-bf44022f1aa8"}'
+                        return (@{ name = 'fixture-1'; state = 'Enabled'; tenantId = $approvedTenantId } | ConvertTo-Json -Compress)
                     }
                     'account list-locations' { return '["eastus"]' }
                     'provider show' { return 'Registered' }
@@ -323,4 +326,24 @@ foreach ($scenario in @('expected-native-failure', 'assertion-failure', 'load-fa
         }
         finally { Remove-Item -LiteralPath $root -Recurse -Force }
     }
+}
+
+Test-Case 'init-from-template replaces the owner specifics with the examples and is idempotent' {
+    $root = New-ToolingFixture
+    try {
+        $pairs = @{
+            'infra/core/tenant-codes.json' = 'infra/core/tenant-codes.example.json'
+            'docs/targets.md'              = 'docs/targets.example.md'
+        }
+        $first = @(& (Join-Path $root 'scripts/init-from-template.ps1')) -join "`n"
+        foreach ($pair in $pairs.GetEnumerator()) {
+            Assert-Equal -Actual (Get-FileHash -LiteralPath (Join-Path $root $pair.Key)).Hash `
+                -Expected (Get-FileHash -LiteralPath (Join-Path $root $pair.Value)).Hash `
+                -Message "'$($pair.Key)' must match its example after initialization."
+        }
+        $second = @(& (Join-Path $root 'scripts/init-from-template.ps1')) -join "`n"
+        Assert-True -Condition ($second -notmatch 'Replaced:') -Message 'A second run must change nothing.'
+        Assert-Match -Actual "$first`n$second" -Pattern 'tenant-codes.json' -Message 'The script must report each file.'
+    }
+    finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }

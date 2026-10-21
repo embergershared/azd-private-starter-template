@@ -12,16 +12,20 @@ it needs a desktop inside that VNet.
 
 ## Start here
 
-1. Review [prerequisites and required roles](docs/deployment.md#prerequisites-and-roles).
-2. Choose a [deployment profile](#deployment-profiles) and, if needed,
+1. In a repository created from this template, record your tenants and
+   subscriptions; see
+   [Starting a repository from the template](docs/deployment.md#starting-a-repository-from-the-template).
+   Your targets are listed in [docs/targets.md](docs/targets.md).
+2. Review [prerequisites and required roles](docs/deployment.md#prerequisites-and-roles).
+3. Choose a [deployment profile](#deployment-profiles) and, if needed,
    [expert overrides](docs/configuration.md#expert-feature-overrides).
-3. Follow the gated [prepare → validate → deploy lifecycle](docs/deployment.md).
-4. Add the resources you need from the [module catalog](docs/modules.md).
+4. Follow the gated [prepare → validate → deploy lifecycle](docs/deployment.md).
+5. Add the resources you need from the [module catalog](docs/modules.md).
 
 ```powershell
 # Variables values
-$tenantId = 'dd045087-7959-4625-81a9-bf44022f1aa8' # must be listed in infra/core/tenant-codes.json
-$subscriptionId = '113c3bf3-dff3-4bb7-84e8-2cd44152185e' # MngEnv567410-s2-Sandbox
+$tenantId = '<tenant-guid>' # must be listed in infra/core/tenant-codes.json
+$subscriptionId = '<subscription-guid>'
 # Use a lowercase, unique 2-32 character environment name.
 $environment = 'my-azd-env-dev'
 $location = 'eastus2'
@@ -54,7 +58,7 @@ update metadata on later provisions. When `AZURE_SUBSCRIPTION_ID` is not set,
 the script uses the subscription the Azure CLI is signed in to, and both scripts
 fail if the Azure CLI and `azd` target different subscriptions. The subscription
 code comes from a final `-<N>` display-name token (`-1` gives `s1`), a delimited
-`s<N>` token (`MngEnv567410-s2-Sandbox` gives `s2`), or the subscription ID. To
+`s<N>` token (`Contoso-s2-Sandbox` gives `s2`), or the subscription ID. To
 target another tenant or subscription, see
 [Deploy to another tenant or subscription](docs/deployment.md#deploy-to-another-tenant-or-subscription).
 
@@ -104,7 +108,9 @@ The conventions layer ships with every profile, including `core`:
 | `infra/core/tags.bicep` | The exported common-tag function |
 | `infra/core/private-endpoint.bicep` | The one private endpoint and DNS pattern every module uses |
 | `infra/core/abbreviations.json` | Approved Cloud Adoption Framework resource abbreviations |
-| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID |
+| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID; a new repository starts from `tenant-codes.example.json` |
+| `docs/targets.md` | This repository's tenants, subscriptions and default target; a new repository starts from `targets.example.md` |
+| `scripts/init-from-template.ps1` | Replaces the template owner's specifics with the examples in a new repository |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
 | `scripts/preflight.ps1` | Fail-closed validation before any deployment |
