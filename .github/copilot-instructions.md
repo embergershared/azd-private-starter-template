@@ -3,8 +3,8 @@
 This repository is a reusable, infrastructure-only Azure PoC starter and an
 installed Squad workspace. Azure Developer CLI (`azd`) orchestrates
 subscription-scope modular Bicep from `azure.yaml`; there is no application
-source yet. The empty `## Members` table in `.squad/team.md` keeps the
-coordinator in Init Mode until a team is cast.
+source yet. The Squad team in `.squad/team.md` is already cast and is inherited
+by repositories created from this template.
 
 The approved deployment contract is `.azure/deployment-plan.md`. User guidance
 starts in `README.md` and `docs/`. Keep implementation, documentation, and the
