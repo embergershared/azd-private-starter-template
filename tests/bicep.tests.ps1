@@ -162,6 +162,61 @@ Test-Case 'every Bicep file in the template lints clean' {
     }
 }
 
+function Get-DefaultParameterValues {
+    <#
+    .SYNOPSIS
+        Builds the parameter scope a module is evaluated with when the caller
+        supplies only what is required: literal defaults stay as they are, and
+        every other parameter gets a non-empty stand-in.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)] [psobject] $Template
+    )
+
+    $values = @{}
+    if (-not $Template.PSObject.Properties['parameters']) { return $values }
+    foreach ($property in $Template.parameters.PSObject.Properties) {
+        $definition = $property.Value
+        $hasDefault = $null -ne $definition.PSObject.Properties['defaultValue']
+        $default = if ($hasDefault) { $definition.defaultValue } else { $null }
+        $values[$property.Name] = if (-not $hasDefault) {
+            'required-value'
+        }
+        elseif ($default -is [string] -and $default.StartsWith('[')) {
+            'expression-default'
+        }
+        else {
+            $default
+        }
+    }
+    return $values
+}
+
+Test-Case 'every module dependency resolves to a well-formed resource ID with default parameters' {
+    # Bicep emits a dependsOn resource ID for every resource a module references,
+    # conditional or not, and ARM evaluates each one before deploying anything.
+    # A name that is empty whenever its optional feature is off therefore fails
+    # template validation on every deployment, which is what the network
+    # module's skipped Container Apps NSG once did.
+    foreach ($module in $catalog.modules) {
+        $compiled = Get-CompiledTemplate -BicepPath (Get-RepoPath $module.path)
+        $parameters = Get-DefaultParameterValues -Template $compiled
+        foreach ($resource in (Get-TemplateResourceList -Resources $compiled.resources)) {
+            if (-not $resource.PSObject.Properties['dependsOn']) { continue }
+            foreach ($dependency in @($resource.dependsOn)) {
+                $expression = [string] $dependency
+                # A bare name refers to a copy loop, not to a resource ID.
+                if (-not $expression.StartsWith('[')) { continue }
+                $id = [string] (Invoke-ArmExpression -Expression $expression -Template $compiled -Parameters $parameters)
+                Assert-Match -Actual $id -Pattern '^(/[^/]+)+$' `
+                    -Message "Module '$($module.name)': '$($resource.type)' depends on a malformed resource ID when optional parameters keep their defaults."
+            }
+        }
+    }
+}
+
 Test-Case 'the core profile deploys no networking and no compute' {
     $flags = Get-ProfileFeatureFlags -Template $template -ProfileName 'core'
 

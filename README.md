@@ -149,8 +149,9 @@ catalog, and how to author and promote a module.
 
 The suite proves that resource names have not drifted, that every name obeys its
 resource rules, that the catalog is in sync, that all Bicep builds and lints
-clean, and that `core` produces no `Microsoft.Network` or `Microsoft.Compute`
-resources.
+clean, that every module's dependencies still resolve to well-formed resource
+IDs when its optional inputs keep their defaults, and that `core` produces no
+`Microsoft.Network` or `Microsoft.Compute` resources.
 
 ## Documentation
 
