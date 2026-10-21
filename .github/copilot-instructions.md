@@ -157,8 +157,7 @@ azd provision --preview -e <environment>
 ```
 
 Parse PowerShell with its AST before running changed scripts. The infrastructure
-workflow is `.github/workflows/infra-validation.yml`; the live Squad
-automations remain separate.
+workflow is `.github/workflows/infra-validation.yml`.
 
 ## Architecture
 
@@ -178,23 +177,24 @@ automations remain separate.
   `@bradygaster/squad-cli@insider`. The root `.mcp.json` contains an
   `EXAMPLE-github` placeholder and must not be treated as a working GitHub MCP
   configuration.
-- The issue automation is a pipeline: `sync-squad-labels.yml` parses the roster
-  into `squad:*` labels; `squad-triage.yml` reacts to the base `squad` label and
-  chooses a member; `squad-issue-assign.yml` reacts to a member label and
-  acknowledges or assigns the work; `squad-heartbeat.yml` runs the standalone
-  `.squad/templates/ralph-triage.js` monitor after issue/PR activity.
+- The only GitHub Actions workflows are `infra-validation.yml`, which validates
+  infrastructure changes on pull requests, and `template-init.yml`, which
+  replaces the template owner's specifics in a new repository. The Squad
+  workflows that `squad init` installs were removed: they were unconfigured
+  build and release stubs, plus issue-label automation this repository does not
+  use. Their templates remain under `.squad/templates/workflows/`.
 
 ## Repository conventions
 
 - Preserve the exact `## Members` heading and Markdown roster-table shape in
-  `.squad/team.md`. Multiple workflows parse that section line-by-line; changing
-  the heading or replacing the table breaks labels and routing. Replace the
-  placeholder rows in `.squad/routing.md` when casting the team.
-- Treat `.squad/templates/**`, `.github/agents/squad.agent.md`, and the installed
-  workflow set as Squad-owned artifacts that `squad upgrade` may overwrite.
-  The four active workflow files currently match their counterparts under
-  `.squad/templates/workflows/`; keep those local pairs synchronized when an
-  intentional customization is required.
+  `.squad/team.md`. The coordinator parses that section line-by-line; changing
+  the heading or replacing the table breaks routing. Replace the placeholder
+  rows in `.squad/routing.md` when casting the team.
+- Treat `.squad/templates/**` and `.github/agents/squad.agent.md` as
+  Squad-owned artifacts that `squad upgrade` may overwrite. An upgrade can also
+  reinstall the Squad workflows into `.github/workflows/`; delete them again
+  rather than keeping them, unless the repository starts using Squad's issue
+  automation.
 - Project-owned team state is different from installed templates. Preserve
   edits to `.squad/team.md`, `.squad/routing.md`, `.squad/ceremonies.md`, and
   `.squad/decisions.md` across upgrades.
