@@ -7,6 +7,8 @@
 .squad/.cache/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
+# Squad upgrades keep the replaced files as local backups
+*.local-backup
 
 # Azure Developer CLI local environment state and generated artifacts
 .azure/*/

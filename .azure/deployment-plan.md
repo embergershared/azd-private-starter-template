@@ -1,159 +1,55 @@
-# Universal starter deployment contract
+# Deployment plan
 
-## 2026-10-07 superseding decision and correction approval
+This is the project's deployment contract. `azure-prepare` fills it in,
+`azure-validate` records evidence against it, and `azure-deploy` changes Azure
+only after the approval below is recorded. Keep it aligned with `README.md`,
+`docs/`, `azure.yaml`, the hooks and the Bicep.
 
-Status: **Offline merge checks passed; PR CI pending; NOT Azure Validated**.
-Emmanuel authorized correction of the six rejected merge blockers in the isolated
-worktree. Morpheus independently approved the approach before implementation,
-conditional on transactional promotion, regression coverage, accurate retention
-guidance, and reconciliation of public-access and profile instructions. Trinity
-owns these corrections independently of the rejected artifacts' prior author.
+Status: **Not prepared. No environment selected; nothing validated or deployed.**
 
-This decision supersedes the historical 2026-08-27 full-default decision recorded
-in append-only Squad state. The current universal starter defaults to `core`;
-`minimal` remains a supported alias and `full` remains explicitly opt-in.
-Existing explicit environment choices and established resource names are preserved.
-No prior environment, deployment, or validation claim constitutes current evidence.
-The plan was absent in this isolated worktree; current cloud state is **unknown**.
+## Target
 
-### Assumptions and challenged consequences
+| Item | Value |
+|---|---|
+| azd environment | `<environment>` |
+| Tenant | `<tenant name>` (`<tenant-guid>`), listed in `infra/core/tenant-codes.json` |
+| Subscription | `<subscription name>` (`<subscription-guid>`), code `s<N>` |
+| Region | `<region>` (`<location code>`) |
+| Deployment profile | `core` / `private` / `full` |
+| Feature overrides | `{}` |
+| Catalog modules | `<modules this project composes beyond the profile>` |
 
-- This task is offline repository correction only: no tenant/subscription selection,
-  Azure queries, previews, deployments, package installation, or cleanup is authorized.
-- Core does not automatically enable arbitrary catalog additions. Key Vault and
-  Storage are explicit opt-ins; without private networking they may expose public
-  service endpoints. RBAC, TLS, purge protection and disabled Storage shared-key
-  access remain required. Public-capable opt-ins require per-environment approval.
-- Full includes billable networking and compute; Entra VM login requires NAT.
-  An air-gapped override disables both NAT and Entra login.
-- Downgrading profiles stops deployment of disabled conditional resources; ARM
-  incremental deployments can retain previously deployed resources and their bills.
-  Deletion, data retention, identity/dependency impact, rollback/recovery and
-  irreversible cleanup require separate explicit review and approval.
-- Before any future cloud change, validate the chosen environment, subscription,
-  tenant, region, scope, exposure, budget/idle cost, policy, providers, quota, RBAC,
-  licenses, dependencies, secrets and observability. Complete the prepare/validate/
-  deploy gates, package checks and approved preview, then verify resources and
-  returned endpoints. Offline tests do not satisfy these environment-specific gates.
+## Decisions
 
-### Independent review findings and planned dispositions
+Record each decision with its date, who approved it, and the alternatives and
+consequences considered. A later decision supersedes an earlier one explicitly;
+do not rewrite history.
 
-1. Force promotion can destroy existing files: validate metadata first and use an
-   isolated candidate plus transactional restoration, including generated artifacts.
-2. New promotion fails stale docs/hardcoded preflight gates: regenerate docs before
-   conformance and use metadata-driven feature dependencies without auto-enabling.
-3. Add-module emits incomplete bindings/outputs: support only complete known
-   contracts; reject unsupported required inputs before editing with actionable errors.
-4. Adoption hooks pass unsupported parameters: use the environment profile contract
-   and verify executable emitted hooks and copied dependencies.
-5. Downgrade guidance incorrectly promises deletion: document retention, billing and
-   separately approved cleanup consistently.
-6. Compiler stderr contaminates JSON: separate stdout and diagnostics, preserving
-   nonzero failures; cover warning-success and compiler-failure paths.
+- `<yyyy-mm-dd>`: `<decision>`
 
-Targeted disposable-fixture regression tests and the repository's local JSON, AST,
-catalog/docs freshness, PowerShell suite, Bicep format/lint/build and diff checks
-will provide merge-readiness evidence. Independent re-review remains required;
-changes are left uncommitted for the coordinator.
+## Public exceptions and risks
 
-## Current profile contract
+- `<resource>`: `<why it is public, and the controls that apply>`
 
-- `core` (default): resource group, shared naming/tags, Log Analytics and
-  workspace-based Application Insights; no networking or compute by default.
-- `private`: adds the VNet, private DNS, Key Vault and Storage with private endpoints.
-- `full`: adds NAT, Bastion and Windows/Linux jumpboxes with the existing access,
-  shutdown and identity behavior. `minimal` resolves to `private`.
-- The catalog remains eight modules. Promotion makes a module available but does
-  not wire or enable it. Optional additions require matching Bicep/preflight
-  feature settings defaulted to false and a reviewed opt-in.
-- Monitoring uses public service endpoints. Core Key Vault/Storage opt-ins without
-  a private subnet are public-capable, not anonymous access; firewall/RBAC/TLS
-  requirements and per-environment exposure review still apply.
+## Validation checklist
 
-## 2026-10-07 correction dispositions and local evidence
+All checks must pass before a deployment. A passing PR or offline test run does
+not waive any of them.
 
-All six findings are corrected for independent re-review:
-
-1. Promotion validates the full candidate catalog, compiled module, docs and real
-   conformance suite before replacement. Publication rollback restores the original
-   module (including hidden/uncommitted files) and generated bytes without resetting
-   Git. Regression fixtures prove metadata, conformance and staging-failure recovery,
-   including unchanged pre-existing staged entries and unstaged content.
-2. Promotion regenerates catalog/DNS/docs before gating and stages their exact
-   paths. A real ninth-module fixture passes promotion, conformance, freshness and
-   staging checks; this is happy-path evidence, not just rejection tests. Preflight
-   uses a metadata-selection helper while preserving shipped dependency overrides.
-   Unknown/null feature flags remain disabled without explicit composition.
-3. Add-module compiles the actual target module and checks required parameters and
-   supported string outputs before editing. All eight shipped modules either remain
-   already-wired no-ops or receive actionable manual-binding rejection in an empty
-   fixture. A newly scaffolded resource's completed generated snippet compiles and
-   subsequent wiring is a no-op.
-4. Adopted hooks use persisted azd profile values and copy their selection/naming
-   dependencies. A missing target catalog is rejected before writes. Emitted hooks
-   execute the copied scripts with mocked Azure/azd for default core, private, minimal
-   and full. These tests also exposed and fixed empty operator-list argument binding
-   and singleton JSON collection handling; no real Azure commands ran.
-5. README/configuration and this plan now describe incremental retention/billing
-   and separate cleanup approval. Bicep instructions explicitly reflect approved
-   core opt-ins instead of globally forbidding the public-capable implementation.
-6. Compiler stdout alone is parsed as JSON; stderr remains diagnostic, nonzero
-   status fails, and failed builds are not cached. Both regression paths pass with
-   native-process mocks; the installed Bicep upgrade warning remains visible.
-
-Final offline validation:
-
-| Check | Result |
-| --- | --- |
-| Known project JSON (`infra`, `tests/fixtures`; no environment state) | 15 parsed |
-| PowerShell AST (`scripts`, `tests`) | 20 parsed |
-| `build-catalog.ps1 -Check`, `build-docs.ps1 -Check` | Both pass |
-| `tests/run-tests.ps1` | **56 passed, 0 failed** (20 tooling regressions) |
-| Bicep compile and lint (full suite) | All 12 files pass |
-| Bicep formatting comparison | All 12 files pass |
-| `git diff --check` | Pass |
-| Disposable fixture/promotion/diagnostic residues | None |
-
-No packages were installed or Bicep upgraded. No branch switch, commit, push,
-Azure preview/deployment or resource cleanup occurred. Current cloud state is
-unknown; **Azure validation remains pending for every future target environment**.
-Morpheus independently re-reviewed the corrections and approved them on
-2026-10-07, subject to the full local test gate and passing PR CI. No significant
-remaining issues were found. Unsupported module bindings require manual
-composition; promotion alone never enables deployment.
-
-The approved plan is the sole exception to `.azure/**` in `.gitignore`;
-environment state remains excluded. Coordinator commit and PR checks remain
-pending. Merge approval does not authorize deployment or cleanup.
-
-## Validation boundary
-
-Recipe: Azure Developer CLI with subscription-scope modular Bicep. The coordinator
-re-ran the full suite after review: 56 passed, 0 failed; all 29 tracked JSON files
-parsed, script AST and generated-file checks passed, and all 12 Bicep files matched
-the formatter. The Azure validation workflow was initialized but remains incomplete
-because no deployment environment is selected or authorized for this merge.
-
-Before a future deployment, all Azure validation checks must pass:
-
-- [ ] Verify AZD installation and `azure.yaml` schema.
-- [ ] Select and confirm the environment, tenant, subscription, region and scope.
+- [ ] Verify the AZD installation and the `azure.yaml` schema.
+- [ ] Confirm the environment, tenant, subscription, region and scope.
 - [ ] Verify authentication, providers, quota, licensing and permissions.
-- [ ] Run the selected environment's preflight and provision preview.
+- [ ] Run `./tests/run-tests.ps1`.
+- [ ] Run preflight and `azd provision --preview -e <environment>`.
 - [ ] Repeat Bicep build/lint and validate packaging with `azd package`.
 - [ ] Review effective Azure policy and static RBAC.
-- [ ] Record environment-specific evidence and complete `azure-validate`.
+- [ ] Record the environment-specific evidence below.
 
-Aspire and Docker checks do not apply to this infrastructure-only template.
-No Azure validation step is waived by a passing PR or an offline test result.
+## Approval
 
-### PR CI process-exit correction
+- `<yyyy-mm-dd>`: `<approver>` approved `<operation>` for `<environment>`.
 
-PR #1's first Ubuntu run executed all 56 tests successfully but failed the job:
-the intentional compiler-failure test left a nonzero native exit code for the
-PowerShell Actions wrapper. The runner now reports zero only after confirming
-no assertion or file-load failures. Three subprocess regressions cover successful
-expected failures, real assertion failures and file-load failures using the CI
-wrapper contract. The targeted tooling suite passed 23 tests locally; independent
-review found no significant issues in this correction. The next CI run must pass
-the entire 59-test suite and remaining workflow checks before merge.
+## Evidence
+
+Record each validation or deployment run: the date, the environment, the
+commands run, and the result. Never record secrets or `.env` contents.
