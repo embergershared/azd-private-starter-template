@@ -31,7 +31,10 @@ param sku string = 'Basic'
 @description('Principal IDs (workload identities) granted AcrPull.')
 param pullPrincipalIds array = []
 
-var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+var acrPullRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+)
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: name
