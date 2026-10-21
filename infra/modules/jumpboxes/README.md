@@ -27,6 +27,11 @@ These rules are enforced by `scripts/preflight.ps1` and by the module itself:
 - `entraLogin` requires a virtual machine and requires `natGateway` for egress
 - `shutdownSchedules` requires a virtual machine
 
+`Microsoft.DevTestLab` is needed only by the auto-shutdown schedules, so
+preflight drops it from the registration check when `shutdownSchedules` is
+false. It is the provider most often unregistered in a subscription; see
+[resource providers](../../../docs/deployment.md#resource-providers).
+
 ## Credentials
 
 Administrator passwords are generated with `newGuid()` in the `key-vault`

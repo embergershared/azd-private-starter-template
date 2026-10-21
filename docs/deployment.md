@@ -49,6 +49,32 @@ the same least-privilege roles before access testing. Review the authoritative
 [Azure built-in role definitions](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles)
 when permissions or role IDs change.
 
+### Resource providers
+
+Preflight checks that every resource provider declared by the enabled modules
+is registered in the target subscription, and fails closed when one is not.
+Each module declares its providers in `metadata.json`; the
+[catalog table](modules.md#catalog-contents) lists them. Beyond the `private`
+rung, `full` adds `Microsoft.Compute` and `Microsoft.DevTestLab`.
+`Microsoft.DevTestLab` backs the VM auto-shutdown schedules and is rarely
+registered until something needs it, so it is the usual cause of a first `full`
+preflight failure. Preflight drops it from the check when `shutdownSchedules`
+is disabled.
+
+The failure names each unregistered provider with the command that registers
+it. The `preprovision` hook never registers providers on its own, so
+`azd provision --preview` stays read-only. Either run the printed commands, or
+let preflight register them and continue:
+
+```powershell
+.\scripts\preflight.ps1 -RegisterProviders
+```
+
+Registration needs `Microsoft.Resources/subscriptions/providers/register/action`
+on the subscription, which Contributor includes. A provider whose registration
+is still in progress is reported separately; wait for it to finish and re-run
+preflight.
+
 ### Jumpbox requirements (`full` profile only)
 
 Windows 11 Pro is license-gated. Preflight queries the exact
@@ -159,7 +185,9 @@ subscription. To target another one:
    hex characters of the subscription ID; choose a readable one before the
    first provision with `azd env set AZURE_SUBSCRIPTION_CODE s1`.
 5. **Register providers and check quota** in the new subscription. Preflight
-   reports unregistered providers but never registers them.
+   reports unregistered providers with the commands that register them, and
+   registers them only when run by hand with `-RegisterProviders`; see
+   [resource providers](#resource-providers).
 
 ## 2. Validate
 

@@ -1,5 +1,12 @@
 [CmdletBinding()]
-param()
+param(
+    # Registers the resource providers the enabled modules need instead of
+    # failing on them. The preprovision hook never passes it, so
+    # `azd provision --preview` stays read-only; run
+    # ./scripts/preflight.ps1 -RegisterProviders yourself when preflight
+    # reports an unregistered provider.
+    [switch] $RegisterProviders
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -32,6 +39,24 @@ function Get-RequiredEnvironmentValue {
     }
 
     return $value.Trim()
+}
+
+function Get-ProviderRegistrationState {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Namespace,
+
+        [Parameter(Mandatory)]
+        [string] $SubscriptionId
+    )
+
+    $state = & az provider show --namespace $Namespace --subscription $SubscriptionId `
+        --query registrationState --output tsv --only-show-errors
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect provider '$Namespace'."
+    }
+
+    return [string] $state
 }
 
 foreach ($command in @('az', 'azd')) {
@@ -213,19 +238,48 @@ if (-not $featureSettings.shutdownSchedules) {
     $null = $providers.Remove('Microsoft.DevTestLab')
 }
 
-$unregisteredProviders = foreach ($provider in $providers) {
-    $state = & az provider show --namespace $provider --subscription $subscriptionId `
-        --query registrationState --output tsv --only-show-errors
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to inspect provider '$provider'."
+$providerStates = [ordered] @{}
+foreach ($provider in $providers) {
+    $providerStates[$provider] = Get-ProviderRegistrationState -Namespace $provider -SubscriptionId $subscriptionId
+}
+$unregisteredProviders = @($providerStates.Keys | Where-Object { $providerStates[$_] -ne 'Registered' })
+
+if ($unregisteredProviders.Count -gt 0 -and $RegisterProviders) {
+    # Opt-in only. Registration is a subscription-wide change, so the hook never
+    # does it on its own; an operator who passes -RegisterProviders has asked
+    # for exactly this.
+    foreach ($provider in $unregisteredProviders) {
+        Write-Output "Registering provider '$provider' in subscription $subscriptionId (was '$($providerStates[$provider])')..."
+        & az provider register --namespace $provider --subscription $subscriptionId --wait --only-show-errors
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to register provider '$provider'. Registration needs Microsoft.Resources/subscriptions/providers/register/action on the subscription; ask someone who has it to run: az provider register --namespace $provider --subscription $subscriptionId --wait"
+        }
+        $providerStates[$provider] = Get-ProviderRegistrationState -Namespace $provider -SubscriptionId $subscriptionId
+        if ($providerStates[$provider] -ne 'Registered') {
+            throw "Provider '$provider' is still '$($providerStates[$provider])' after registration. Wait for it to finish, then re-run preflight."
+        }
+        Write-Output "Registered provider '$provider'."
     }
-    if ($state -ne 'Registered') {
-        $provider
-    }
+    $unregisteredProviders = @()
 }
 
-if (@($unregisteredProviders).Count -gt 0) {
-    throw "Register these Azure providers before provisioning: $($unregisteredProviders -join ', ')."
+if ($unregisteredProviders.Count -gt 0) {
+    # Microsoft.DevTestLab is the usual offender: it backs the full profile's
+    # auto-shutdown schedules and is rarely registered until something needs it.
+    $missing = @($unregisteredProviders | Where-Object { $providerStates[$_] -ne 'Registering' })
+    $pending = @($unregisteredProviders | Where-Object { $providerStates[$_] -eq 'Registering' })
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if ($missing.Count -gt 0) {
+        $lines.Add("Register these Azure providers before provisioning: $($missing -join ', ').")
+        $lines.Add('Run ./scripts/preflight.ps1 -RegisterProviders, or register them yourself and re-run preflight:')
+        foreach ($provider in $missing) {
+            $lines.Add("  az provider register --namespace $provider --subscription $subscriptionId --wait")
+        }
+    }
+    if ($pending.Count -gt 0) {
+        $lines.Add("Registration is still in progress for: $($pending -join ', '). Wait for it to finish, then re-run preflight.")
+    }
+    throw ($lines -join [Environment]::NewLine)
 }
 
 # ---------------------------------------------------------------------------

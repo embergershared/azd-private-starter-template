@@ -124,6 +124,11 @@ Conditional checks run only when the relevant feature is enabled:
 A `core` deployment therefore performs no `Microsoft.Network` or
 `Microsoft.Compute` calls at all.
 
+When a provider is unregistered, the failure lists the `az provider register`
+command for each one. Running `./scripts/preflight.ps1 -RegisterProviders` by
+hand registers them and continues; the `preprovision` hook never passes that
+switch. See [resource providers](deployment.md#resource-providers).
+
 ## Expert feature overrides
 
 Supported Boolean keys are `network`, `keyVault`, `storage`, `bastion`,
