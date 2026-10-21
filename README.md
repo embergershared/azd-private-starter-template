@@ -48,6 +48,15 @@ grants VM sign-in rights:
 azd env set AZURE_OPERATOR_PRINCIPAL_IDS (az ad signed-in-user show --query id --output tsv)
 ```
 
+It also deploys into resource providers that `core` never touches.
+`Microsoft.DevTestLab`, which backs the VM auto-shutdown schedules, is the one
+most often unregistered. Preflight names every unregistered provider with the
+command that registers it, and registers them itself only when you ask:
+
+```powershell
+.\scripts\preflight.ps1 -RegisterProviders
+```
+
 Preview is not deployment. Do not run `azd provision` or `azd up` until the
 validation gate and deployment approval are complete.
 
@@ -112,7 +121,7 @@ The conventions layer ships with every profile, including `core`:
 | `scripts/init-from-template.ps1` | Replaces the template owner's specifics with the examples in a new repository |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
-| `scripts/preflight.ps1` | Fail-closed validation before any deployment |
+| `scripts/preflight.ps1` | Fail-closed validation before any deployment; `-RegisterProviders` registers missing resource providers on request |
 | `scripts/set-deployment-tags.ps1` | Subscription code, lifecycle tags, and override transport |
 | `tests/` | The suite that proves names, rules, catalog and profiles are intact |
 

@@ -261,6 +261,139 @@ foreach ($scenario in $hookScenarios) {
     }
 }
 
+# Runs the fixture's own preflight.ps1 for the full profile against mocked
+# Azure CLIs, with a caller-supplied provider registration table. The mocks
+# record every `az provider register` call so a test can prove the default
+# path never writes to the subscription.
+function Invoke-FixturePreflight {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [hashtable] $MockProviderStates,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]] $MockRegisterCalls,
+        [string] $FeatureOverrides = '{}',
+        [switch] $RegisterProviders
+    )
+
+    $fixtureSubscriptionId = '11111111-1111-1111-1111-111111111111'
+    $fixtureTenantId = @((Get-Content -LiteralPath (Join-Path $Root 'infra/core/tenant-codes.json') -Raw |
+                ConvertFrom-Json -AsHashtable).Keys)[0]
+    $fixtureValues = @{
+        DEPLOYMENT_PROFILE = 'full'; AZURE_SUBSCRIPTION_ID = $fixtureSubscriptionId
+        AZURE_SUBSCRIPTION_CODE = 's1'; AZURE_LOCATION = 'eastus'; AZURE_ENV_NAME = 'fixture'
+        AZURE_FEATURE_OVERRIDES_JSON = $FeatureOverrides
+        AZURE_OPERATOR_PRINCIPAL_IDS = '22222222-2222-2222-2222-222222222222'
+    }
+    function azd {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -eq 'env' -and $args[1] -eq 'get-value') {
+            if ($fixtureValues.ContainsKey($args[2])) { return $fixtureValues[$args[2]] }
+            $global:LASTEXITCODE = 1
+            return
+        }
+        throw "Unexpected azd call: $args"
+    }
+    function az {
+        $global:LASTEXITCODE = 0
+        switch ("$($args[0]) $($args[1])") {
+            'account show' {
+                if ($args -contains 'id') { return $fixtureSubscriptionId }
+                return (@{ name = 'fixture-1'; state = 'Enabled'; tenantId = $fixtureTenantId } | ConvertTo-Json -Compress)
+            }
+            'account list-locations' { return '["eastus"]' }
+            'provider show' {
+                $namespace = [string] $args[[array]::IndexOf($args, '--namespace') + 1]
+                if ($MockProviderStates.ContainsKey($namespace)) { return $MockProviderStates[$namespace] }
+                return 'Registered'
+            }
+            'provider register' {
+                $namespace = [string] $args[[array]::IndexOf($args, '--namespace') + 1]
+                $MockRegisterCalls.Add(($args -join ' '))
+                $MockProviderStates[$namespace] = 'Registered'
+                return
+            }
+            'vm list-skus' { return '[{"restrictions":[]}]' }
+            'vm image' { return '{}' }
+            'vm list-usage' { return '[{"localName":"Total Regional vCPUs","limit":100,"currentValue":0}]' }
+            default { throw "Unexpected Azure call: $args" }
+        }
+    }
+
+    Push-Location $Root
+    try {
+        return ((& (Join-Path $Root 'scripts/preflight.ps1') -RegisterProviders:$RegisterProviders) -join "`n")
+    }
+    finally { Pop-Location }
+}
+
+foreach ($scenario in @(
+        @{
+            Name   = 'names an unregistered provider and the command that registers it'; State = 'NotRegistered'
+            Expect = @(
+                'Register these Azure providers before provisioning: Microsoft\.DevTestLab\.',
+                'Run \./scripts/preflight\.ps1 -RegisterProviders',
+                'az provider register --namespace Microsoft\.DevTestLab --subscription 11111111-1111-1111-1111-111111111111 --wait'
+            )
+        }
+        @{
+            Name   = 'tells a registration still in progress apart from a missing one'; State = 'Registering'
+            Expect = @('Registration is still in progress for: Microsoft\.DevTestLab\.'); Reject = 'az provider register'
+        }
+    )) {
+    Test-Case "preflight $($scenario.Name)" {
+        $root = New-ToolingFixture
+        try {
+            $states = @{ 'Microsoft.DevTestLab' = $scenario.State }
+            $registerCalls = [System.Collections.Generic.List[string]]::new()
+            $message = ''
+            try { Invoke-FixturePreflight -Root $root -MockProviderStates $states -MockRegisterCalls $registerCalls | Out-Null }
+            catch { $message = $_.Exception.Message }
+            foreach ($pattern in $scenario.Expect) {
+                Assert-Match -Actual $message -Pattern $pattern -Message 'The failure must tell the operator exactly what to run.'
+            }
+            if ($scenario.ContainsKey('Reject')) {
+                Assert-NotMatch -Actual $message -Pattern $scenario.Reject -Message 'A provider that is already registering must not be told to register again.'
+            }
+            Assert-Equal -Actual $registerCalls.Count -Expected 0 -Message 'Preflight without -RegisterProviders must never change the subscription.'
+        }
+        finally { Remove-Item -LiteralPath $root -Recurse -Force }
+    }
+}
+
+Test-Case 'preflight -RegisterProviders registers the missing provider and then passes' {
+    $root = New-ToolingFixture
+    try {
+        $states = @{ 'Microsoft.DevTestLab' = 'NotRegistered' }
+        $registerCalls = [System.Collections.Generic.List[string]]::new()
+        $output = Invoke-FixturePreflight -Root $root -MockProviderStates $states -MockRegisterCalls $registerCalls -RegisterProviders
+        Assert-Match -Actual $output -Pattern "Registered provider 'Microsoft\.DevTestLab'" -Message 'The opt-in path must report what it registered.'
+        Assert-Match -Actual $output -Pattern "Preflight passed .* using profile 'full'" -Message 'Preflight must continue once the provider is registered.'
+        Assert-Equal -Actual $registerCalls.Count -Expected 1 -Message 'Only the unregistered provider may be registered.'
+        Assert-Match -Actual $registerCalls[0] -Pattern '--namespace Microsoft\.DevTestLab --subscription 11111111-1111-1111-1111-111111111111 --wait' -Message 'Registration must target the provider in the deployment subscription and wait for it to finish.'
+    }
+    finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Test-Case 'preflight drops Microsoft.DevTestLab from the check when shutdown schedules are disabled' {
+    $root = New-ToolingFixture
+    try {
+        $states = @{ 'Microsoft.DevTestLab' = 'NotRegistered' }
+        $registerCalls = [System.Collections.Generic.List[string]]::new()
+        $output = Invoke-FixturePreflight -Root $root -MockProviderStates $states -MockRegisterCalls $registerCalls -FeatureOverrides '{"shutdownSchedules":false}'
+        Assert-Match -Actual $output -Pattern "Preflight passed .* using profile 'full'" -Message 'Without schedules the provider is not needed, so its state must not block.'
+        Assert-NotMatch -Actual $output -Pattern 'Microsoft\.DevTestLab' -Message 'An unused provider must not be verified.'
+        Assert-Equal -Actual $registerCalls.Count -Expected 0 -Message 'Nothing may be registered.'
+    }
+    finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Test-Case 'the preprovision hook runs preflight without -RegisterProviders' {
+    foreach ($relative in @('azure.yaml', 'scripts/adopt-conventions.ps1')) {
+        $text = Get-Content -LiteralPath (Get-RepoPath $relative) -Raw
+        Assert-Match -Actual $text -Pattern '(?m)^\s*\./scripts/preflight\.ps1\s*$' -Message "'$relative' must run preflight with no arguments."
+        Assert-NotMatch -Actual $text -Pattern 'RegisterProviders' -Message "'$relative' must never register providers: azd provision --preview has to stay read-only."
+    }
+}
+
 Test-Case 'adoption without a project catalog fails before copying files' {
     $root = New-ToolingFixture
     try {
