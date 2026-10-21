@@ -32,7 +32,7 @@ applyTo: "infra/**,azure.yaml,docs/**/*.md,scripts/**/*.ps1"
 - Name every platform-managed resource group with
   `managedResourceGroupName(resourceGroupName)`: the full name of the resource
   group that owns the service plus `-managed`, for example
-  `rg-100001-use2-s3-dev-managed`. This covers the Container Apps environment
+  `rg-123456-use2-s3-dev-managed`. This covers the Container Apps environment
   `infrastructureResourceGroup`, the AKS `nodeResourceGroup`, managed
   application and Databricks managed resource groups, and any other service
   that creates its own resource group. Never accept the generated `MC_`/`ME_`
