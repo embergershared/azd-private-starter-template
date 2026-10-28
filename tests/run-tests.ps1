@@ -28,7 +28,7 @@ Set-StrictMode -Version Latest
 
 # Bicep loads the gitignored tenant catalog at compile time. A fresh clone or a
 # CI runner has none, so start it from the example; an existing one is kept.
-& (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/init-from-template.ps1') | Out-Null
+& (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/init-local-files.ps1') | Out-Null
 
 $filter = if ($Name.Contains('*')) { "$Name.tests.ps1" } else { "*$Name*.tests.ps1" }
 $testFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter $filter -File -Recurse | Sort-Object FullName)

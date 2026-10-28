@@ -141,7 +141,7 @@ cloning, and before the first preview, create both files from the examples
 (PowerShell, in the repository folder):
 
 ```powershell
-./scripts/init-from-template.ps1
+./scripts/init-local-files.ps1
 ```
 
 The script never overwrites a file that exists, so it is safe to run again; the

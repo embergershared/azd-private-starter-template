@@ -65,8 +65,8 @@ CI checks the script with shellcheck and a self-test on fictitious values (**Wor
 
 ## Repository settings
 
-A public repository made from this template is set to the following. To check them later
-(PowerShell):
+`scripts/Initialize-Repo.ps1` sets these on a public repository made from this template
+([template.md](template.md)). To check them later (PowerShell):
 ```powershell
 gh api repos/<owner>/<repo>/rulesets --jq '.[].name'
 gh api repos/<owner>/<repo> --jq .security_and_analysis
@@ -81,6 +81,7 @@ gh api repos/<owner>/<repo>/code-scanning/default-setup --jq .state
 | Private vulnerability reporting | On: see [SECURITY.md](../.github/SECURITY.md) |
 | CodeQL | Default setup |
 | Issues, wiki, merged branches | Issues on, wiki off, branches deleted on merge |
+| GitHub Actions | On: added to the organization's selected repositories when needed (see [When GitHub Actions is off](#when-github-actions-is-off)) |
 
 A new CI job is added to the `needs` of `CI result`, never as a separate required check, so the
 ruleset doesn't change. The PR deployments add their own **PR deployment result** check once
@@ -94,6 +95,27 @@ they are set up ([ci-deployment.md](ci-deployment.md#6-make-the-check-block-merg
 | `PR_DEPLOYMENT_ENABLED`, `AZURE_LOCATION`, `CI_FEATURE_OVERRIDES_JSON` | off, `eastus2`, `{}` | PR deployments ([ci-deployment.md](ci-deployment.md)) |
 
 Set one with `gh variable set DOTNET_SOLUTION --body src/App.slnx --repo <owner>/<repo>`.
+
+## When GitHub Actions is off
+
+An organization can run GitHub Actions in selected repositories only (embergershared does). A
+repository created from the template isn't on that list, so `Initialize-Repo.ps1` adds it: that
+needs the `admin:org` scope on the `gh` token, once per machine. Without it, or when the
+owner's policy doesn't allow it, the script warns, skips the CodeQL default setup and creates
+the `main` ruleset without its required checks (they would never report, so no PR could be
+merged), then opens the PR as usual.
+
+To finish the settings afterwards (PowerShell, workstation):
+```powershell
+gh auth refresh -h github.com -s admin:org
+$repo = '<owner>/<repo>'
+$id = gh api "repos/$repo" --jq .id
+gh api -X PUT "orgs/$($repo.Split('/')[0])/actions/permissions/repositories/$id"
+gh api "repos/$repo/actions/permissions" --jq .enabled
+gh api -X PATCH "repos/$repo/code-scanning/default-setup" -f state=configured
+```
+Then, in the browser: **Settings → Rules → Rulesets → main → Require status checks to pass**,
+add `CI result` and `PR rules`, and save.
 
 ## Private repositories
 

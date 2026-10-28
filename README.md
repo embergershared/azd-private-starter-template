@@ -13,10 +13,11 @@ __DESCRIPTION__
 > Create a repository with **Use this template**, clone it, then run once (PowerShell, in its
 > folder):
 > ```powershell
-> ./scripts/init-from-template.ps1
+> ./scripts/Initialize-Repo.ps1 -Description '<one line about the project>' -Stacks dotnet,python
 > ```
-> It creates the local tenant and subscription files; record your tenants in them, then
-> follow [docs/getting-started.md](docs/getting-started.md).
+> It names the project, removes the stacks you don't use, sets the repository up and opens
+> the first PR; see [docs/template.md](docs/template.md). Then record your tenants in the
+> local files it created and follow [docs/getting-started.md](docs/getting-started.md).
 <!-- template:end -->
 
 > [!NOTE]
@@ -45,6 +46,7 @@ __DESCRIPTION__
 | [docs/database.md](docs/database.md) | Database changes: migration, backup, way back |
 | [docs/SUPPORT.md](docs/SUPPORT.md) | Questions, bugs, and what support to expect |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | Changes |
+| [docs/template.md](docs/template.md) | What the template contains and how a new project is set up |
 
 **Contribute**
 

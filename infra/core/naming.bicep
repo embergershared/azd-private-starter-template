@@ -28,7 +28,7 @@ var abbreviations = loadJsonContent('./abbreviations.json')
 var locationCodes = loadJsonContent('./location-codes.json')
 
 // tenant-codes.json is gitignored and local to each clone. When it is missing
-// (BCP091), run ./scripts/init-from-template.ps1, then add your tenant to it.
+// (BCP091), run ./scripts/init-local-files.ps1, then add your tenant to it.
 @export()
 @description('Approved tenant codes, keyed by lowercase Entra tenant ID.')
 var tenantCodes = loadJsonContent('./tenant-codes.json')

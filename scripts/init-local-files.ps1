@@ -17,7 +17,7 @@
     once after cloning, then record your own tenants in both files.
 
 .EXAMPLE
-    ./scripts/init-from-template.ps1
+    ./scripts/init-local-files.ps1
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param()

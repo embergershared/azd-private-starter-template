@@ -21,7 +21,7 @@ infra/*.jsonc
 infra/main.json
 
 # The tenants and subscriptions a clone deploys to. They identify real tenants,
-# so they stay local; scripts/init-from-template.ps1 creates them from their
+# so they stay local; scripts/init-local-files.ps1 creates them from their
 # committed .example files. See docs/deployment.md.
 infra/core/tenant-codes.json
 docs/targets.md
