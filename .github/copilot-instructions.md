@@ -177,9 +177,14 @@ workflow is `.github/workflows/infra-validation.yml`.
   `@bradygaster/squad-cli@insider`. The root `.mcp.json` contains an
   `EXAMPLE-github` placeholder and must not be treated as a working GitHub MCP
   configuration.
-- The only GitHub Actions workflows are `infra-validation.yml`, which validates
-  infrastructure changes on pull requests, and `template-init.yml`, which
-  replaces the template owner's specifics in a new repository. The Squad
+- `infra-validation.yml` validates infrastructure changes on pull requests,
+  and `template-init.yml` replaces the template owner's specifics in a new
+  repository. `pr-deployment.yml`, `pr-deployment-full.yml` and
+  `pr-deployment-cleanup.yml` deploy pull requests into throwaway environments
+  through the reusable `deploy-environment.yml`, and stay skipped until the
+  `AZURE_CLIENT_ID` repository variable is set; see `docs/ci-deployment.md`.
+  Keep `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the
+  `paths` filter of `pr-deployment-full.yml` in step. The Squad
   workflows that `squad init` installs were removed: they were unconfigured
   build and release stubs, plus issue-label automation this repository does not
   use. Their templates remain under `.squad/templates/workflows/`.
