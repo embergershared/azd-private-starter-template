@@ -28,6 +28,9 @@
     },
     "lastUpdatedOn": {
       "value": "${AZURE_LAST_UPDATED_ON}"
+    },
+    "enableKeyVaultPurgeProtection": {
+      "value": "${AZURE_KEY_VAULT_PURGE_PROTECTION=true}"
     }
   }
 }
