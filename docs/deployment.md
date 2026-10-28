@@ -200,6 +200,10 @@ configuration dependencies, provider registration for the modules actually
 enabled, target location, and — only when the relevant feature is on — operator
 IDs, VM SKU quota/restrictions, and Windows image visibility.
 
+Once set up, the [pull request deployments](ci-deployment.md) run this
+preview and a real throwaway deployment for every pull request that changes
+infrastructure, and tear it down again.
+
 ```powershell
 Get-ChildItem -Recurse -Filter *.json |
   ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null }
