@@ -191,14 +191,14 @@ foreach ($scenario in $hookScenarios) {
     Test-Case "adopted hook executes copied dependencies with $($scenario.Name)" {
         $profile = $scenario.Profile
         $root = New-ToolingFixture
-        # Any approved tenant will do, so the test passes against the real and the example catalog.
-        $approvedTenantId = @((Get-Content -LiteralPath (Join-Path $root 'infra/core/tenant-codes.json') -Raw |
-                    ConvertFrom-Json -AsHashtable).Keys)[0]
         try {
             $target = Join-Path $root 'adopted'
             New-Item -ItemType Directory -Path (Join-Path $target 'infra/modules') -Force | Out-Null
             Copy-Item -LiteralPath (Join-Path $root 'infra/modules/catalog.json') -Destination (Join-Path $target 'infra/modules/catalog.json')
             $output = @(& (Join-Path $root 'scripts/adopt-conventions.ps1') -Path $target)
+            # The adopted project's catalog starts from the example: approve its tenant.
+            $approvedTenantId = @((Get-Content -LiteralPath (Join-Path $target 'infra/core/tenant-codes.json') -Raw |
+                        ConvertFrom-Json -AsHashtable).Keys)[0]
             $hook = @($output | Where-Object { $_ -is [string] -and $_.StartsWith('hooks:') })[0]
             $body = ($hook -split "`n" | Where-Object { $_ -match '^      ' } | ForEach-Object { $_.Substring(6) }) -join "`n"
             $values = @{
@@ -558,22 +558,61 @@ foreach ($scenario in @('expected-native-failure', 'assertion-failure', 'load-fa
     }
 }
 
-Test-Case 'init-from-template replaces the owner specifics with the examples and is idempotent' {
+Test-Case 'init-from-template creates the missing local files from the examples and never overwrites them' {
     $root = New-ToolingFixture
     try {
         $pairs = @{
             'infra/core/tenant-codes.json' = 'infra/core/tenant-codes.example.json'
             'docs/targets.md'              = 'docs/targets.example.md'
         }
+        foreach ($local in $pairs.Keys) { Remove-Item -LiteralPath (Join-Path $root $local) -Force -ErrorAction SilentlyContinue }
         $first = @(& (Join-Path $root 'scripts/init-from-template.ps1')) -join "`n"
         foreach ($pair in $pairs.GetEnumerator()) {
             Assert-Equal -Actual (Get-FileHash -LiteralPath (Join-Path $root $pair.Key)).Hash `
                 -Expected (Get-FileHash -LiteralPath (Join-Path $root $pair.Value)).Hash `
-                -Message "'$($pair.Key)' must match its example after initialization."
+                -Message "'$($pair.Key)' must start from its example in a fresh clone."
         }
+        Assert-Match -Actual $first -Pattern 'Created: infra/core/tenant-codes.json' -Message 'The script must report each file it creates.'
+
+        # A clone's own tenants are never replaced by the examples.
+        $catalogPath = Join-Path $root 'infra/core/tenant-codes.json'
+        Set-Content -LiteralPath $catalogPath -Value '{ "abcd1234-0000-4000-8000-000000000000": { "name": "Fabrikam", "code": "fab" } }'
+        $before = (Get-FileHash -LiteralPath $catalogPath).Hash
         $second = @(& (Join-Path $root 'scripts/init-from-template.ps1')) -join "`n"
-        Assert-True -Condition ($second -notmatch 'Replaced:') -Message 'A second run must change nothing.'
-        Assert-Match -Actual "$first`n$second" -Pattern 'tenant-codes.json' -Message 'The script must report each file.'
+        Assert-Equal -Actual (Get-FileHash -LiteralPath $catalogPath).Hash -Expected $before -Message 'An existing local catalog must be kept.'
+        Assert-True -Condition ($second -notmatch 'Created:') -Message 'A second run must change nothing.'
+        Assert-Match -Actual $second -Pattern 'Kept: infra/core/tenant-codes.json' -Message 'The script must report each file it keeps.'
+    }
+    finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Test-Case "adoption never carries the template's tenant catalog and keeps the project's own" {
+    $root = New-ToolingFixture
+    try {
+        # The template's local catalog holds tenants an adopting project must never receive.
+        $templateCatalog = '{ "abcd1234-0000-4000-8000-000000000000": { "name": "Fabrikam", "code": "fab" } }'
+        Set-Content -LiteralPath (Join-Path $root 'infra/core/tenant-codes.json') -Value $templateCatalog
+        $examplePath = Join-Path $root 'infra/core/tenant-codes.example.json'
+
+        $fresh = Join-Path $root 'fresh'
+        New-Item -ItemType Directory -Path (Join-Path $fresh 'infra/modules') -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $root 'infra/modules/catalog.json') -Destination (Join-Path $fresh 'infra/modules/catalog.json')
+        $null = & (Join-Path $root 'scripts/adopt-conventions.ps1') -Path $fresh 3>$null
+        Assert-Equal -Actual (Get-FileHash -LiteralPath (Join-Path $fresh 'infra/core/tenant-codes.json')).Hash `
+            -Expected (Get-FileHash -LiteralPath $examplePath).Hash `
+            -Message 'A project without a catalog must start from the example.'
+
+        $owned = Join-Path $root 'owned'
+        New-Item -ItemType Directory -Path (Join-Path $owned 'infra/modules'), (Join-Path $owned 'infra/core') -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $root 'infra/modules/catalog.json') -Destination (Join-Path $owned 'infra/modules/catalog.json')
+        $ownCatalog = Join-Path $owned 'infra/core/tenant-codes.json'
+        Set-Content -LiteralPath $ownCatalog -Value '{ "00000000-0000-0000-0000-000000000000": { "name": "Woodgrove", "code": "wood" } }'
+        $before = (Get-FileHash -LiteralPath $ownCatalog).Hash
+        $result = & (Join-Path $root 'scripts/adopt-conventions.ps1') -Path $owned 3>$null |
+            Where-Object { $_ -isnot [string] } | Select-Object -Last 1
+        Assert-Equal -Actual (Get-FileHash -LiteralPath $ownCatalog).Hash -Expected $before -Message "A project's own catalog must be kept."
+        Assert-True -Condition (@($result.Skipped | Where-Object { $_.File -eq 'infra/core/tenant-codes.json' -and $_.Reason -eq 'ProjectOwned' }).Count -eq 1) `
+            -Message 'The catalog must be reported as project-owned.'
     }
     finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }

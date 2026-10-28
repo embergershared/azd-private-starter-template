@@ -182,12 +182,34 @@ Test-Case 'the tenant-code catalog is valid and agrees with Bicep tenantCodeFor'
 }
 
 Test-Case 'the example tenant-code catalog is what a new repository starts from' {
-    # The real catalog holds the template owner's tenants; a repository created
-    # from the template replaces it with this file (scripts/init-from-template.ps1).
+    # The real catalog is gitignored and local to each clone; a clone without one
+    # starts from this file (scripts/init-from-template.ps1).
     Assert-Equal (Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $tenantCodesExamplePath) '123456' `
         'Example tenant code mismatch.'
     Assert-Throws { Get-TenantCode -TenantId 'ffffffff-ffff-ffff-ffff-ffffffffffff' -CatalogPath $tenantCodesExamplePath } `
         'Unknown tenants must fail against the example catalog.'
+}
+
+Test-Case 'a missing tenant-code catalog fails with how to create it' {
+    $missingPath = Join-Path ([System.IO.Path]::GetTempPath()) ('tenant-codes-' + [guid]::NewGuid().ToString('N') + '.json')
+    $message = ''
+    try { Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $missingPath | Out-Null }
+    catch { $message = $_.Exception.Message }
+    Assert-Match -Actual $message -Pattern 'is missing.*init-from-template\.ps1' `
+        -Message 'A clone without its local catalog must be told how to create it.'
+}
+
+Test-Case 'the tenant and subscription files are gitignored, and their examples are committed' {
+    $root = Get-RepoRoot
+    foreach ($pair in @(
+            @{ Local = 'infra/core/tenant-codes.json'; Example = 'infra/core/tenant-codes.example.json' }
+            @{ Local = 'docs/targets.md'; Example = 'docs/targets.example.md' })) {
+        $null = git -C $root check-ignore --quiet --no-index $pair.Local
+        Assert-Equal -Actual $LASTEXITCODE -Expected 0 -Message "'$($pair.Local)' must be gitignored: it names real tenants."
+        $null = git -C $root check-ignore --quiet --no-index $pair.Example
+        Assert-Equal -Actual $LASTEXITCODE -Expected 1 -Message "'$($pair.Example)' must not be gitignored."
+    }
+    $global:LASTEXITCODE = 0
 }
 
 Test-Case 'globally unique names keep prefix, location, subscription and hash' {

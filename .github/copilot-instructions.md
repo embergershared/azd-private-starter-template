@@ -177,9 +177,11 @@ workflow is `.github/workflows/infra-validation.yml`.
   `@bradygaster/squad-cli@insider`. The root `.mcp.json` contains an
   `EXAMPLE-github` placeholder and must not be treated as a working GitHub MCP
   configuration.
-- The only GitHub Actions workflows are `infra-validation.yml`, which validates
-  infrastructure changes on pull requests, and `template-init.yml`, which
-  replaces the template owner's specifics in a new repository. The Squad
+- The only GitHub Actions workflow is `infra-validation.yml`, which validates
+  infrastructure changes on pull requests. `infra/core/tenant-codes.json` and
+  `docs/targets.md` name real tenants: they are gitignored, created from their
+  committed `.example` files by `scripts/init-from-template.ps1`, and never
+  committed. Put only fictitious values in the examples. The Squad
   workflows that `squad init` installs were removed: they were unconfigured
   build and release stubs, plus issue-label automation this repository does not
   use. Their templates remain under `.squad/templates/workflows/`.
