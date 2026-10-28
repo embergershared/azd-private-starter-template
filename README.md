@@ -12,10 +12,10 @@ it needs a desktop inside that VNet.
 
 ## Start here
 
-1. In a repository created from this template, record your tenants and
-   subscriptions; see
-   [Starting a repository from the template](docs/deployment.md#starting-a-repository-from-the-template).
-   Your targets are listed in [docs/targets.md](docs/targets.md).
+1. Create your local tenant and subscription files with
+   `./scripts/init-from-template.ps1`, then record your tenants in them; see
+   [Local tenant and subscription files](docs/deployment.md#local-tenant-and-subscription-files).
+   They are gitignored: they name real tenants.
 2. Review [prerequisites and required roles](docs/deployment.md#prerequisites-and-roles).
 3. Choose a [deployment profile](#deployment-profiles) and, if needed,
    [expert overrides](docs/configuration.md#expert-feature-overrides).
@@ -120,9 +120,9 @@ The conventions layer ships with every profile, including `core`:
 | `infra/core/tags.bicep` | The exported common-tag function |
 | `infra/core/private-endpoint.bicep` | The one private endpoint and DNS pattern every module uses |
 | `infra/core/abbreviations.json` | Approved Cloud Adoption Framework resource abbreviations |
-| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID; a new repository starts from `tenant-codes.example.json` |
-| `docs/targets.md` | This repository's tenants, subscriptions and default target; a new repository starts from `targets.example.md` |
-| `scripts/init-from-template.ps1` | Replaces the template owner's specifics with the examples in a new repository |
+| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID; gitignored, local to each clone, started from `tenant-codes.example.json` |
+| `docs/targets.md` | This clone's tenants, subscriptions and default target; gitignored, local to each clone, started from `targets.example.md` |
+| `scripts/init-from-template.ps1` | Creates the two local files above from their examples when they are missing; never overwrites them |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
 | `scripts/preflight.ps1` | Fail-closed validation before any deployment; `-RegisterProviders` registers missing resource providers on request |
