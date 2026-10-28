@@ -23,7 +23,9 @@ break glass) is in [docs/security.md](../docs/security.md).
 
 ## What the repository does to stay safe
 
-- Dependabot alerts.
+- Dependabot alerts, and Dependabot updates of the workflow actions no sooner than 7 days
+  after their release.
+- Every workflow action is pinned by commit SHA, and CI lints the workflows.
 - The tenants and subscriptions a clone deploys to stay in gitignored local files; only
   fictitious examples are committed.
 - Workflows run on GitHub-hosted runners with read-only tokens by default. The pull request

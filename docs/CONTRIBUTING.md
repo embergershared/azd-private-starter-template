@@ -14,7 +14,7 @@ Thank you for helping. The full rules, for people and AI coding assistants alike
 4. **Run the checks** before you open the PR: `./tests/run-tests.ps1` and the others in
    [getting-started.md](getting-started.md#test).
 5. **Open the PR** against `main`, with `Closes #<issue>` and the sections of the PR template.
-   The CI checks must be green.
+   The **CI result** and **PR rules** checks must be green.
 
 ## Never commit
 
@@ -27,7 +27,7 @@ Thank you for helping. The full rules, for people and AI coding assistants alike
 ## Authorship
 
 You are the author of your commits. Don't add AI co-author trailers or "Generated with"
-lines; a PR that has one is not merged.
+lines; the PR rules check refuses them.
 
 ## License
 
