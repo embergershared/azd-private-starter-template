@@ -171,6 +171,8 @@ off until you create the deployment identity; see
 - [Deployment, access, cost, and teardown](docs/deployment.md)
 - [Pull request deployments](docs/ci-deployment.md)
 - [Security, private DNS, monitoring access, and break glass](docs/security.md)
+- [Rules for contributors and AI agents](.github/copilot-instructions.md), with the
+  per-language ones in [`.github/instructions/`](.github/instructions/)
 
 Environments deployed by an earlier revision with Azure Monitor private link
 require the ordered cleanup described in
