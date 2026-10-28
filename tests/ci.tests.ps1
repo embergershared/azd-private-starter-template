@@ -55,7 +55,7 @@ Test-Case 'only infrastructure changes deploy, and a manual run deploys its one 
     foreach ($path in @('infra/main.bicep', 'infra/modules/network/main.bicep', 'scripts/preflight.ps1', 'azure.yaml', '.github/workflows/deploy-environment.yml', 'infra\core\naming.bicep')) {
         Assert-True -Condition (Test-InfrastructureChange -Path @('README.md', $path)) -Message "'$path' must count as an infrastructure change."
     }
-    foreach ($path in @('README.md', 'docs/deployment.md', 'tests/ci.tests.ps1', 'azure.yaml.bak', 'infrastructure.md', '.github/workflows/infra-validation.yml')) {
+    foreach ($path in @('README.md', 'docs/deployment.md', 'tests/ci.tests.ps1', 'azure.yaml.bak', 'infrastructure.md', '.github/workflows/ci.yml')) {
         Assert-True -Condition (-not (Test-InfrastructureChange -Path @($path))) -Message "'$path' must not deploy anything."
     }
     Assert-True -Condition (-not (Test-InfrastructureChange -Path @())) -Message 'An empty change deploys nothing.'
@@ -309,8 +309,9 @@ Test-Case 'the deployment workflows are gated, never cancel a teardown and keep 
     }
 }
 
-Test-Case 'the deployment workflows keep identifiers secret, mask them first and pin every action' {
-    $files = @('deploy-environment.yml', 'pr-deployment.yml', 'pr-deployment-full.yml', 'pr-deployment-cleanup.yml')
+Test-Case 'the workflows keep identifiers secret, mask them first and pin every action' {
+    $files = @(Get-ChildItem -LiteralPath $workflowRoot -Filter *.yml | ForEach-Object Name)
+    Assert-True -Condition ($files -contains 'ci.yml') -Message 'Every workflow must be checked.'
     foreach ($file in $files) {
         $text = Get-Content -LiteralPath (Join-Path $workflowRoot $file) -Raw
         # Variables are printed unmasked in public logs; identifiers are secrets.
@@ -343,7 +344,7 @@ Test-Case 'the deployment workflows keep identifiers secret, mask them first and
 }
 
 Test-Case 'the masking action masks each GUID inside a list and skips short values' {
-    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    $bash = Get-TestBash
     $jq = Get-Command jq -ErrorAction SilentlyContinue
     if (-not $bash -or -not $jq) {
         Write-Warning 'bash or jq is missing: the masking action was not run.'
@@ -352,7 +353,7 @@ Test-Case 'the masking action masks each GUID inside a list and skips short valu
     $script = Get-RepoPath '.github/actions/mask-values/mask-values.sh'
     $env:MASK_MIN_LENGTH = '4'
     try {
-        $out = @("11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000`nab`ncal01" | & $bash.Source $script)
+        $out = @("11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000`nab`ncal01" | & $bash $script)
     }
     finally {
         Remove-Item Env:MASK_MIN_LENGTH
@@ -361,4 +362,34 @@ Test-Case 'the masking action masks each GUID inside a list and skips short valu
         Assert-True -Condition ($out -contains "::add-mask::$value") -Message "'$value' must be masked on its own."
     }
     Assert-True -Condition (-not ($out -contains '::add-mask::ab')) -Message 'A value shorter than the minimum is not masked.'
+}
+
+# The jobs of a workflow, by id, each with its text.
+function Get-WorkflowJobs {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $text = Get-Content -LiteralPath $Path -Raw
+    $jobs = [ordered] @{}
+    foreach ($job in [regex]::Split(($text -split '(?m)^jobs:\s*$')[1], '(?m)^(?=  [\w-]+:\s*$)') | Where-Object { $_.Trim() }) {
+        if ($job -match '^\s*(?<id>[\w-]+):') { $jobs[$Matches['id']] = $job }
+    }
+    $jobs
+}
+
+Test-Case 'CI result waits for every CI job, and CI validates the infrastructure on every PR' {
+    $path = Join-Path $workflowRoot 'ci.yml'
+    $jobs = Get-WorkflowJobs -Path $path
+    Assert-True -Condition ($jobs.Contains('result')) -Message 'ci.yml must have the CI result job.'
+    Assert-Match -Actual $jobs['result'] -Pattern '(?m)^    name: CI result\s*$' -Message 'The required check is named CI result.'
+    Assert-Match -Actual $jobs['result'] -Pattern '(?m)^    if: always\(\)\s*$' -Message 'CI result must report even when a job failed.'
+    $needs = if ($jobs['result'] -match '(?m)^    needs: \[(?<n>[^\]]*)\]') { @($Matches['n'] -split ',\s*' | Sort-Object) } else { @() }
+    $others = @($jobs.Keys | Where-Object { $_ -ne 'result' } | Sort-Object)
+    Assert-Equal -Actual ($needs -join ',') -Expected ($others -join ',') -Message 'CI result must wait for every other CI job.'
+
+    $text = Get-Content -LiteralPath $path -Raw
+    Assert-NotMatch -Actual $text -Pattern '(?m)^\s+paths:' -Message 'CI must run on every PR, so CI result always reports.'
+    foreach ($step in @('./scripts/build-catalog.ps1 -Check', './scripts/build-docs.ps1 -Check', './tests/run-tests.ps1', 'az bicep format')) {
+        Assert-True -Condition ($jobs['infrastructure'].Contains($step)) -Message "The infrastructure job must run '$step'."
+    }
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $workflowRoot 'infra-validation.yml'))) -Message 'The validation lives in ci.yml only.'
 }
