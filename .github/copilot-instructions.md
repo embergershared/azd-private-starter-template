@@ -220,8 +220,10 @@ PowerShell syntax check. Parse PowerShell with its AST before running a changed 
 
 `pr-deployment.yml`, `pr-deployment-full.yml` and `pr-deployment-cleanup.yml` deploy pull
 requests into throwaway environments through the reusable `deploy-environment.yml`, and stay
-skipped until the `AZURE_CLIENT_ID` repository variable is set; see `docs/ci-deployment.md`.
-Keep `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the `paths` filter of
+skipped until the `PR_DEPLOYMENT_ENABLED` repository variable is `true`; see
+`docs/ci-deployment.md`. Their identifiers are secrets, masked first with
+`.github/actions/mask-values`, and they publish only the what-if counts. Keep
+`$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the `paths` filter of
 `pr-deployment-full.yml` in step.
 
 ### Local tenant and subscription files (always)
@@ -230,7 +232,7 @@ Keep `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the `paths` f
 are gitignored, created from their committed `.example` files by
 `scripts/init-from-template.ps1`, and never committed. Put only fictitious values in the
 examples. The deployment workflows write a one-tenant catalog on the runner from the
-`AZURE_TENANT_ID` and `CI_TENANT_CODE` repository variables.
+`AZURE_TENANT_ID` and `CI_TENANT_CODE` repository secrets.
 
 ### Azure deployment
 
