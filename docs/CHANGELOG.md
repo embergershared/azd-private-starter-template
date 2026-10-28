@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Repository created from
+  [embergershared/azd-private-starter-template](https://github.com/embergershared/azd-private-starter-template).
+<!-- template:start -->
+- One setup script, `scripts/Initialize-Repo.ps1`, turns a new repository into its own
+  project: names, stacks, repository settings and security features, then its first issue
+  and PR (#17).
 - .NET and Python scaffolding: SDK and Python pins, central NuGet versions, the approved feed,
   hash-locked requirements, the 7-day package age gate, database backup and migration scripts;
   CI builds, lints and tests a stack once the repository has its code (#16).
@@ -20,8 +26,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   down before they merge, once the deployment identity is set up (#21).
 
 ### Changed
+- `scripts/init-from-template.ps1` is now `scripts/init-local-files.ps1`: it creates each
+  clone's local tenant files, and `Initialize-Repo.ps1` does the one-time setup (#17).
 - The tenant catalog and the targets page are local to each clone, created from their
   committed examples by `scripts/init-from-template.ps1` (#12).
 
 ### Removed
 - The Squad agent workspace (#11).
+<!-- template:end -->

@@ -183,7 +183,7 @@ Test-Case 'the tenant-code catalog is valid and agrees with Bicep tenantCodeFor'
 
 Test-Case 'the example tenant-code catalog is what a new repository starts from' {
     # The real catalog is gitignored and local to each clone; a clone without one
-    # starts from this file (scripts/init-from-template.ps1).
+    # starts from this file (scripts/init-local-files.ps1).
     Assert-Equal (Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $tenantCodesExamplePath) '123456' `
         'Example tenant code mismatch.'
     Assert-Throws { Get-TenantCode -TenantId 'ffffffff-ffff-ffff-ffff-ffffffffffff' -CatalogPath $tenantCodesExamplePath } `
@@ -195,7 +195,7 @@ Test-Case 'a missing tenant-code catalog fails with how to create it' {
     $message = ''
     try { Get-TenantCode -TenantId '00000000-0000-0000-0000-000000000000' -CatalogPath $missingPath | Out-Null }
     catch { $message = $_.Exception.Message }
-    Assert-Match -Actual $message -Pattern 'is missing.*init-from-template\.ps1' `
+    Assert-Match -Actual $message -Pattern 'is missing.*init-local-files\.ps1' `
         -Message 'A clone without its local catalog must be told how to create it.'
 }
 
