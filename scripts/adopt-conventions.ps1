@@ -70,7 +70,7 @@ $payload = @(
     'infra/core/name-rules.json'
     'infra/core/abbreviations.json'
     'infra/core/location-codes.json'
-    'infra/core/tenant-codes.json'
+    'infra/core/tenant-codes.example.json'
     'scripts/naming.ps1'
     'scripts/preflight.ps1'
     'scripts/module-selection.ps1'
@@ -90,6 +90,7 @@ $protected = @(
     'infra/main.parameters.json'
     'infra/modules'
     'azure.yaml'
+    'infra/core/tenant-codes.json'
 )
 
 $previous = $null
@@ -174,6 +175,18 @@ foreach ($relative in $protected) {
     if (Test-Path -LiteralPath $destinationPath) {
         $skipped.Add([pscustomobject] @{ File = $relative; Reason = 'ProjectOwned' })
     }
+}
+
+# The template's own tenant catalog never travels: it names the template
+# owner's tenants. A project without one starts from the example, which
+# approves no real tenant, so preflight fails until the project adds its own.
+$tenantCatalogPath = Join-Path $target 'infra/core/tenant-codes.json'
+if (-not (Test-Path -LiteralPath $tenantCatalogPath)) {
+    if ($PSCmdlet.ShouldProcess($tenantCatalogPath, 'Create from tenant-codes.example.json')) {
+        Copy-Item -LiteralPath (Join-Path $target 'infra/core/tenant-codes.example.json') -Destination $tenantCatalogPath
+    }
+    $applied.Add([pscustomobject] @{ File = 'infra/core/tenant-codes.json'; Action = 'CreateFromExample' })
+    Write-Warning "infra/core/tenant-codes.json in '$target' was created from the example: add the project's tenants to it before its first deployment."
 }
 
 # ---------------------------------------------------------------------------
