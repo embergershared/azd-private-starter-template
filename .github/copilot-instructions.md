@@ -1,10 +1,8 @@
 # Repository overview
 
-This repository is a reusable, infrastructure-only Azure PoC starter and an
-installed Squad workspace. Azure Developer CLI (`azd`) orchestrates
-subscription-scope modular Bicep from `azure.yaml`; there is no application
-source yet. The Squad team in `.squad/team.md` is already cast and is inherited
-by repositories created from this template.
+This repository is a reusable, infrastructure-only Azure PoC starter. Azure
+Developer CLI (`azd`) orchestrates subscription-scope modular Bicep from
+`azure.yaml`; there is no application source yet.
 
 The approved deployment contract is `.azure/deployment-plan.md`. User guidance
 starts in `README.md` and `docs/`. Keep implementation, documentation, and the
@@ -139,11 +137,7 @@ Before implementation or cloud changes:
 
 ## Validation commands
 
-This infrastructure-only repository has no application test target. Do not run
-the `npm test` commands mentioned inside installed Squad skills or template
-comments; they belong to the upstream Squad CLI/SDK source repositories.
-
-Use the checks that apply to the files changed:
+This infrastructure-only repository has no application test target. Use the checks that apply to the files changed:
 
 ```powershell
 # Parse every JSON file.
@@ -161,22 +155,6 @@ workflow is `.github/workflows/infra-validation.yml`.
 
 ## Architecture
 
-- `.github/agents/squad.agent.md` is the installed coordinator prompt. It
-  resolves the state backend and team root, selects Init Mode or Team Mode, and
-  dispatches work. The final `SQUAD_COORDINATOR_CANARY_a8f3` token detects a
-  truncated prompt.
-- `.squad/` is the project team layer. `team.md`, `routing.md`,
-  `ceremonies.md`, `decisions.md`, agent charters, and RAI policy are project
-  configuration/state. With the minimal `.squad/config.json` in this repository,
-  unspecified state settings use the coordinator's local defaults.
-- `.squad/templates/` is an installed snapshot of Squad-owned templates and
-  references. It is input/reference material for initialization and upgrade,
-  not this repository's application source. `.copilot/skills/` contains the
-  installed focused guidance used by Copilot sessions.
-- `.copilot/mcp-config.json` configures the `squad_state` MCP bridge through
-  `@bradygaster/squad-cli@insider`. The root `.mcp.json` contains an
-  `EXAMPLE-github` placeholder and must not be treated as a working GitHub MCP
-  configuration.
 - `infra-validation.yml` validates infrastructure changes on pull requests,
   and `template-init.yml` replaces the template owner's specifics in a new
   repository. `pr-deployment.yml`, `pr-deployment-full.yml` and
@@ -184,38 +162,13 @@ workflow is `.github/workflows/infra-validation.yml`.
   through the reusable `deploy-environment.yml`, and stay skipped until the
   `AZURE_CLIENT_ID` repository variable is set; see `docs/ci-deployment.md`.
   Keep `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the
-  `paths` filter of `pr-deployment-full.yml` in step. The Squad
-  workflows that `squad init` installs were removed: they were unconfigured
-  build and release stubs, plus issue-label automation this repository does not
-  use. Their templates remain under `.squad/templates/workflows/`.
+  `paths` filter of `pr-deployment-full.yml` in step.
 
 ## Repository conventions
 
-- Preserve the exact `## Members` heading and Markdown roster-table shape in
-  `.squad/team.md`. The coordinator parses that section line-by-line; changing
-  the heading or replacing the table breaks routing. Replace the placeholder
-  rows in `.squad/routing.md` when casting the team.
-- Treat `.squad/templates/**` and `.github/agents/squad.agent.md` as
-  Squad-owned artifacts that `squad upgrade` may overwrite. An upgrade can also
-  reinstall the Squad workflows into `.github/workflows/`; delete them again
-  rather than keeping them, unless the repository starts using Squad's issue
-  automation.
-- Project-owned team state is different from installed templates. Preserve
-  edits to `.squad/team.md`, `.squad/routing.md`, `.squad/ceremonies.md`, and
-  `.squad/decisions.md` across upgrades.
-- Files covered by `.gitattributes` use the union merge driver because they are
-  append-only team state. Append to decisions, agent histories, logs,
-  orchestration logs, and the RAI audit trail; do not rewrite or reorder them.
-  Runtime inboxes, logs, sessions, scratch data, and caches listed in
-  `.gitignore` remain local.
-- Decisions affecting other agents go to
-  `.squad/decisions/inbox/<agent>-<brief-slug>.md` for Scribe to merge. That
-  inbox is intentionally ignored rather than committed directly.
 - Never read live `.env` or `.env.*` files. Use `.env.example`, `.env.sample`,
-  or `.env.template` for schema information. Never write credentials, tokens,
-  connection strings, private keys, email addresses, or other PII into
-  committed `.squad/` state.
-- For Squad issue work, use `squad/<issue-number>-<kebab-case-slug>` branches,
-  reference the issue with `Closes #<number>`, and follow decisions recorded in
-  `.squad/decisions.md`. This repository currently has only `main`; do not apply
-  the upstream Squad CLI skill's `dev`/`insiders` branch model here.
+  or `.env.template` for schema information.
+- For issue work, use `<prefix>/<type>/<issue-number>-<kebab-case-slug>`
+  branches (prefix `emm/` in g62priv repositories, `emberger/` in embergershared
+  ones), never `squad/`. Never commit or push to `main` directly: changes reach
+  it only through a PR. Reference the issue with `Closes #<number>`.
