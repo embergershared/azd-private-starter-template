@@ -26,6 +26,8 @@ break glass) is in [docs/security.md](../docs/security.md).
 - Dependabot alerts, and Dependabot updates of the workflow actions no sooner than 7 days
   after their release.
 - Every workflow action is pinned by commit SHA, and CI lints the workflows.
+- Code dependencies, once a project adds them, are locked with hashes, come from an approved
+  feed, and are at least 7 days old ([supply-chain.md](../docs/supply-chain.md)).
 - The tenants and subscriptions a clone deploys to stay in gitignored local files; only
   fictitious examples are committed.
 - Workflows run on GitHub-hosted runners with read-only tokens by default. The pull request

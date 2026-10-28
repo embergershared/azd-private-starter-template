@@ -13,15 +13,19 @@ comment) and bumped by Dependabot after a 7-day cooldown.
 
 ## CI jobs
 
-| Job | Steps |
-|---|---|
-| Workflow lint | actionlint (checksum-verified download) with shellcheck on every `run:` script; shellcheck and a self-test of `mask-values` (see [Public logs](#public-logs)). |
-| Infrastructure validation | JSON parse, PowerShell syntax, `build-catalog.ps1 -Check` and `build-docs.ps1 -Check`, `./tests/run-tests.ps1` (names, rules, catalog, profiles, Bicep build and lint, workflow rules), Bicep formatting. |
-| **CI result** | Fails when any job failed or was cancelled; skipped jobs are fine. The check the ruleset requires. |
+| Job | Runs when | Steps |
+|---|---|---|
+| Detect stacks | always | .NET when a `*.slnx`/`*.sln`/`*.csproj` is tracked; Python when `requirements-dev.lock` or `requirements.lock` is. |
+| Workflow lint | always | actionlint (checksum-verified download) with shellcheck on every `run:` script; shellcheck and a self-test of `mask-values` (see [Public logs](#public-logs)). |
+| Infrastructure validation | always | JSON parse, PowerShell syntax, `build-catalog.ps1 -Check` and `build-docs.ps1 -Check`, `./tests/run-tests.ps1` (names, rules, catalog, profiles, Bicep build and lint, workflow rules), Bicep formatting. |
+| Package age gate | .NET or Python | `scripts/check_package_age.py`: every locked version at least 7 days old (see [supply-chain.md](supply-chain.md)). |
+| .NET build and test | .NET | `setup-dotnet` from `global.json`, NuGet cache, restore in locked mode, `dotnet format --verify-no-changes`, Release build, tests with `.trx` results uploaded. |
+| Python lint and test | Python | `setup-python` from `.python-version`, `pip install --require-hashes`, `ruff check`, `ruff format --check`, pytest (no tests = warning). |
+| **CI result** | always | Fails when any job failed or was cancelled; skipped jobs are fine. The check the ruleset requires. |
 
-Every job runs on every PR, so **CI result** reports even for a PR that changes no
-infrastructure. PR runs cancel the previous run of the same PR; runs on `main` are never
-cancelled.
+The infrastructure job runs on every PR, so **CI result** reports even for a PR that changes
+no infrastructure; the stack jobs are skipped until the repository has code. PR runs cancel
+the previous run of the same PR; runs on `main` are never cancelled.
 
 **PR rules** takes the owner prefix from the repository's owner: `emberger/` in
 `embergershared`, `emm/` in `g62priv`, none elsewhere or from a fork. Dependabot PRs are exempt.
@@ -81,6 +85,15 @@ gh api repos/<owner>/<repo>/code-scanning/default-setup --jq .state
 A new CI job is added to the `needs` of `CI result`, never as a separate required check, so the
 ruleset doesn't change. The PR deployments add their own **PR deployment result** check once
 they are set up ([ci-deployment.md](ci-deployment.md#6-make-the-check-block-merges)).
+
+## Repository variables
+
+| Variable | Default | Used by |
+|---|---|---|
+| `DOTNET_SOLUTION` | shallowest `*.slnx` / `*.sln` / `*.csproj` | CI |
+| `PR_DEPLOYMENT_ENABLED`, `AZURE_LOCATION`, `CI_FEATURE_OVERRIDES_JSON` | off, `eastus2`, `{}` | PR deployments ([ci-deployment.md](ci-deployment.md)) |
+
+Set one with `gh variable set DOTNET_SOLUTION --body src/App.slnx --repo <owner>/<repo>`.
 
 ## Private repositories
 

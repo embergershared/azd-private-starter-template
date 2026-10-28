@@ -376,7 +376,7 @@ function Get-WorkflowJobs {
     $jobs
 }
 
-# The run script of a named step, without its YAML indentation.
+# The run script of a step, found by its name or its id, without its YAML indentation.
 function Get-WorkflowStepScript {
     param(
         [Parameter(Mandatory)] [string] $Path,
@@ -384,7 +384,7 @@ function Get-WorkflowStepScript {
     )
 
     $lines = Get-Content -LiteralPath $Path
-    $step = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -match "^\s*- name: $([regex]::Escape($StepName))\s*$" })
+    $step = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -match "^\s*- (name|id): $([regex]::Escape($StepName))\s*$" })
     if ($step -lt 0) { throw "No step '$StepName' in $Path." }
     $run = $step + 1
     while ($lines[$run] -notmatch '^\s*run:\s*\|\s*$') { $run++ }
@@ -458,5 +458,86 @@ Test-Case 'PR rules accept each owner''s branch names and refuse squad/ and unpr
     finally {
         foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
         Remove-Item -LiteralPath $scriptPath -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case 'CI detects a stack only from tracked files, and the repository variable picks the .NET target' {
+    $bash = Get-TestBash
+    if (-not $bash) {
+        Write-Warning 'bash is missing: the stack detection was not run.'
+        return
+    }
+    $script = Get-WorkflowStepScript -Path (Join-Path $workflowRoot 'ci.yml') -StepName 'stacks'
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("ci-stacks-$([guid]::NewGuid().ToString('N'))")
+    $scriptPath = "$root.sh"
+    [IO.File]::WriteAllText($scriptPath, $script)
+    $saved = @{}
+    foreach ($name in 'DOTNET_SOLUTION', 'GITHUB_OUTPUT', 'GITHUB_STEP_SUMMARY') { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+    $detect = {
+        param([string[]] $Tracked, [string[]] $Untracked = @(), [string] $Solution = '')
+        if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+        New-Item -ItemType Directory -Path $root | Out-Null
+        foreach ($file in @($Tracked) + @($Untracked) + @('README.md')) {
+            $full = Join-Path $root $file
+            New-Item -ItemType Directory -Path (Split-Path -Parent $full) -Force | Out-Null
+            Set-Content -LiteralPath $full -Value ''
+        }
+        git -C $root init -q
+        git -C $root add -- README.md @($Tracked)
+        $output = Join-Path $root 'github-output.txt'
+        $env:GITHUB_OUTPUT = $output.Replace('\', '/')
+        $env:GITHUB_STEP_SUMMARY = (Join-Path $root 'summary.md').Replace('\', '/')
+        $env:DOTNET_SOLUTION = $Solution
+        Push-Location -LiteralPath $root
+        try { & $bash $scriptPath.Replace('\', '/') *> $null } finally { Pop-Location }
+        Assert-Equal -Actual $LASTEXITCODE -Expected 0 -Message 'The detection must succeed.'
+        $result = @{}
+        foreach ($line in Get-Content -LiteralPath $output) {
+            $key, $value = $line -split '=', 2
+            $result[$key] = $value
+        }
+        $result
+    }
+    try {
+        $none = & $detect -Tracked @() -Untracked @('src/App/App.csproj', 'requirements.lock')
+        Assert-Equal -Actual "$($none['dotnet'])/$($none['python'])" -Expected 'false/false' -Message 'Untracked files must not turn a stack on.'
+
+        $both = & $detect -Tracked @('App.slnx', 'src/App/App.csproj', 'requirements.lock', 'requirements-dev.lock')
+        Assert-Equal -Actual "$($both['dotnet'])|$($both['dotnet-target'])" -Expected 'true|App.slnx' -Message 'The shallowest solution is the .NET target.'
+        Assert-Equal -Actual "$($both['python'])|$($both['python-lock'])" -Expected 'true|requirements-dev.lock' -Message 'The development lock is installed first.'
+
+        $project = & $detect -Tracked @('src/App/App.csproj')
+        Assert-Equal -Actual $project['dotnet-target'] -Expected 'src/App/App.csproj' -Message 'Without a solution, the project is the target.'
+
+        $chosen = & $detect -Tracked @('App.slnx', 'src/Other.slnx') -Solution 'src/Other.slnx'
+        Assert-Equal -Actual $chosen['dotnet-target'] -Expected 'src/Other.slnx' -Message 'DOTNET_SOLUTION overrides the detection.'
+    }
+    finally {
+        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $scriptPath -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case 'the code scaffolding restores from the approved feed only, locked, and CI checks the package age' {
+    [xml] $nuget = Get-Content -LiteralPath (Get-RepoPath 'nuget.config') -Raw
+    $sources = $nuget.configuration.packageSources
+    Assert-True -Condition ($null -ne $sources.SelectSingleNode('clear')) -Message 'nuget.config must clear every inherited feed.'
+    $feeds = @($sources.SelectNodes('add') | ForEach-Object { $_.value })
+    Assert-Equal -Actual ($feeds -join ',') -Expected 'https://packagefeedproxy.microsoft.io/nuget/v3/index.json' `
+        -Message 'NuGet must restore from the approved feed only, with no nuget.org fallback.'
+    $props = Get-Content -LiteralPath (Get-RepoPath 'Directory.Build.props') -Raw
+    Assert-Match -Actual $props -Pattern '<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>' -Message 'Every .NET project must have a lock file.'
+    Assert-Match -Actual $props -Pattern '<RestoreLockedMode Condition="''\$\(ContinuousIntegrationBuild\)'' == ''true''">true</RestoreLockedMode>' -Message 'CI must restore exactly the locked versions.'
+    Assert-Match -Actual (Get-Content -LiteralPath (Get-RepoPath 'Directory.Packages.props') -Raw) -Pattern '<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>' `
+        -Message 'NuGet versions must be set centrally.'
+    Assert-True -Condition ($null -ne (Get-Content -LiteralPath (Get-RepoPath 'global.json') -Raw | ConvertFrom-Json).sdk.version) -Message 'global.json must pin the SDK.'
+    Assert-Match -Actual (Get-Content -LiteralPath (Get-RepoPath '.python-version') -Raw) -Pattern '^3\.\d+\s*$' -Message '.python-version must pin a Python 3 release.'
+
+    $ci = Get-Content -LiteralPath (Join-Path $workflowRoot 'ci.yml') -Raw
+    Assert-Match -Actual $ci -Pattern 'python scripts/check_package_age\.py --min-age-days 7' -Message 'CI must run the 7-day age gate.'
+    Assert-Match -Actual $ci -Pattern 'pip install --require-hashes' -Message 'CI must install Python packages by hash only.'
+    foreach ($script in 'scripts/check_package_age.py', 'scripts/lock_requirements.py', 'scripts/db/sqlite_backup.py', 'scripts/db/Invoke-EfMigration.ps1') {
+        Assert-True -Condition (Test-Path -LiteralPath (Get-RepoPath $script)) -Message "'$script' must be in the repository."
     }
 }
