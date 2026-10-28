@@ -134,7 +134,7 @@ function Get-TenantCode {
 
     # The catalog is gitignored: a fresh clone has none until it is created.
     if (-not (Test-Path -LiteralPath $CatalogPath -PathType Leaf)) {
-        throw "The tenant-code catalog '$CatalogPath' is missing. It is local to each clone: run ./scripts/init-from-template.ps1, then add your tenant to it."
+        throw "The tenant-code catalog '$CatalogPath' is missing. It is local to each clone: run ./scripts/init-local-files.ps1, then add your tenant to it."
     }
 
     try {

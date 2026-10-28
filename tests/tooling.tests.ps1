@@ -558,7 +558,7 @@ foreach ($scenario in @('expected-native-failure', 'assertion-failure', 'load-fa
     }
 }
 
-Test-Case 'init-from-template creates the missing local files from the examples and never overwrites them' {
+Test-Case 'init-local-files creates the missing local files from the examples and never overwrites them' {
     $root = New-ToolingFixture
     try {
         $pairs = @{
@@ -566,7 +566,7 @@ Test-Case 'init-from-template creates the missing local files from the examples 
             'docs/targets.md'              = 'docs/targets.example.md'
         }
         foreach ($local in $pairs.Keys) { Remove-Item -LiteralPath (Join-Path $root $local) -Force -ErrorAction SilentlyContinue }
-        $first = @(& (Join-Path $root 'scripts/init-from-template.ps1')) -join "`n"
+        $first = @(& (Join-Path $root 'scripts/init-local-files.ps1')) -join "`n"
         foreach ($pair in $pairs.GetEnumerator()) {
             Assert-Equal -Actual (Get-FileHash -LiteralPath (Join-Path $root $pair.Key)).Hash `
                 -Expected (Get-FileHash -LiteralPath (Join-Path $root $pair.Value)).Hash `
@@ -578,7 +578,7 @@ Test-Case 'init-from-template creates the missing local files from the examples 
         $catalogPath = Join-Path $root 'infra/core/tenant-codes.json'
         Set-Content -LiteralPath $catalogPath -Value '{ "abcd1234-0000-4000-8000-000000000000": { "name": "Fabrikam", "code": "fab" } }'
         $before = (Get-FileHash -LiteralPath $catalogPath).Hash
-        $second = @(& (Join-Path $root 'scripts/init-from-template.ps1')) -join "`n"
+        $second = @(& (Join-Path $root 'scripts/init-local-files.ps1')) -join "`n"
         Assert-Equal -Actual (Get-FileHash -LiteralPath $catalogPath).Hash -Expected $before -Message 'An existing local catalog must be kept.'
         Assert-True -Condition ($second -notmatch 'Created:') -Message 'A second run must change nothing.'
         Assert-Match -Actual $second -Pattern 'Kept: infra/core/tenant-codes.json' -Message 'The script must report each file it keeps.'
