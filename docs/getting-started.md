@@ -12,8 +12,12 @@ needs a desktop inside that VNet.
 
 ## Start here
 
+A new repository made from the template is set up once with
+`./scripts/Initialize-Repo.ps1`; see [template.md](template.md).
+
 1. Create your local tenant and subscription files with
-   `./scripts/init-from-template.ps1`, then record your tenants in them; see
+   `./scripts/init-local-files.ps1` (`Initialize-Repo.ps1` already did it in its
+   clone), then record your tenants in them; see
    [Local tenant and subscription files](deployment.md#local-tenant-and-subscription-files).
    They are gitignored: they name real tenants.
 2. Review [prerequisites and required roles](deployment.md#prerequisites-and-roles).
@@ -114,7 +118,7 @@ The conventions layer ships with every profile, including `core`:
 | `infra/core/abbreviations.json` | Approved Cloud Adoption Framework resource abbreviations |
 | `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID; gitignored, local to each clone, started from `tenant-codes.example.json` |
 | `docs/targets.md` | This clone's tenants, subscriptions and default target; gitignored, local to each clone, started from `targets.example.md` |
-| `scripts/init-from-template.ps1` | Creates the two local files above from their examples when they are missing; never overwrites them |
+| `scripts/init-local-files.ps1` | Creates the two local files above from their examples when they are missing; never overwrites them |
 | `infra/core/location-codes.json` | The approved region-code catalog |
 | `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
 | `scripts/preflight.ps1` | Fail-closed validation before any deployment; `-RegisterProviders` registers missing resource providers on request |
@@ -150,8 +154,9 @@ lints and tests a stack as soon as the repository has it.
 
 Either way, every locked package must be at least 7 days old
 ([supply-chain.md](supply-chain.md)), and a database change goes through a
-migration, a backup and a way back ([database.md](database.md)). A project that
-uses neither stack can delete its files.
+migration, a backup and a way back ([database.md](database.md)).
+`scripts/Initialize-Repo.ps1 -Stacks` removes the files of a stack the project
+won't use ([template.md](template.md)).
 
 ## Test
 
