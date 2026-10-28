@@ -376,6 +376,31 @@ function Get-WorkflowJobs {
     $jobs
 }
 
+# The run script of a named step, without its YAML indentation.
+function Get-WorkflowStepScript {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $StepName
+    )
+
+    $lines = Get-Content -LiteralPath $Path
+    $step = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -match "^\s*- name: $([regex]::Escape($StepName))\s*$" })
+    if ($step -lt 0) { throw "No step '$StepName' in $Path." }
+    $run = $step + 1
+    while ($lines[$run] -notmatch '^\s*run:\s*\|\s*$') { $run++ }
+    $body = [System.Collections.Generic.List[string]]::new()
+    $indent = -1
+    for ($i = $run + 1; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ($line.Trim() -eq '') { $body.Add(''); continue }
+        $pad = $line.Length - $line.TrimStart().Length
+        if ($indent -lt 0) { $indent = $pad }
+        if ($pad -lt $indent) { break }
+        $body.Add($line.Substring($indent))
+    }
+    ($body -join "`n").TrimEnd() + "`n"
+}
+
 Test-Case 'CI result waits for every CI job, and CI validates the infrastructure on every PR' {
     $path = Join-Path $workflowRoot 'ci.yml'
     $jobs = Get-WorkflowJobs -Path $path
@@ -392,4 +417,46 @@ Test-Case 'CI result waits for every CI job, and CI validates the infrastructure
         Assert-True -Condition ($jobs['infrastructure'].Contains($step)) -Message "The infrastructure job must run '$step'."
     }
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $workflowRoot 'infra-validation.yml'))) -Message 'The validation lives in ci.yml only.'
+}
+
+Test-Case 'PR rules accept each owner''s branch names and refuse squad/ and unprefixed ones' {
+    $bash = Get-TestBash
+    if (-not $bash) {
+        Write-Warning 'bash is missing: the PR rules branch check was not run.'
+        return
+    }
+    $script = Get-WorkflowStepScript -Path (Join-Path $workflowRoot 'pr-rules.yml') -StepName 'Branch name and base branch'
+    $cases = @(
+        @{ Owner = 'embergershared'; Head = 'emberger/ci/15-ci-result'; Fork = $false; Base = 'main'; Pass = $true }
+        @{ Owner = 'g62priv'; Head = 'emm/feature/42-statement-extraction'; Fork = $false; Base = 'main'; Pass = $true }
+        @{ Owner = 'contoso'; Head = 'fix/7-retry'; Fork = $false; Base = 'main'; Pass = $true }
+        @{ Owner = 'embergershared'; Head = 'fix/57-retry-on-throttle'; Fork = $true; Base = 'main'; Pass = $true }
+        @{ Owner = 'embergershared'; Head = 'fix/57-retry-on-throttle'; Fork = $false; Base = 'main'; Pass = $false }
+        @{ Owner = 'g62priv'; Head = 'emberger/fix/57-retry'; Fork = $false; Base = 'main'; Pass = $false }
+        @{ Owner = 'embergershared'; Head = 'squad/12-anything'; Fork = $false; Base = 'main'; Pass = $false }
+        @{ Owner = 'embergershared'; Head = 'emberger/fix/no-issue'; Fork = $false; Base = 'main'; Pass = $false }
+        @{ Owner = 'embergershared'; Head = 'emberger/fix/57-retry'; Fork = $false; Base = 'develop'; Pass = $false }
+        @{ Owner = 'embergershared'; Head = 'emberger/fix/57-retry'; Fork = $false; Base = 'emberger/main'; Pass = $true }
+    )
+    $scriptPath = Join-Path ([IO.Path]::GetTempPath()) ("pr-rules-$([guid]::NewGuid().ToString('N')).sh")
+    [IO.File]::WriteAllText($scriptPath, $script)
+    $saved = @{}
+    foreach ($name in 'OWNER', 'REPO', 'HEAD_REPO', 'HEAD_REF', 'BASE_REF', 'DEFAULT_BRANCH') { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+    try {
+        foreach ($case in $cases) {
+            $env:OWNER = $case.Owner
+            $env:REPO = "$($case.Owner)/project"
+            $env:HEAD_REPO = if ($case.Fork) { 'someone/project' } else { $env:REPO }
+            $env:HEAD_REF = $case.Head
+            $env:BASE_REF = $case.Base
+            $env:DEFAULT_BRANCH = 'main'
+            & $bash $scriptPath *> $null
+            $label = "'$($case.Head)' into '$($case.Base)' in $($case.Owner)$(if ($case.Fork) { ' from a fork' })"
+            Assert-Equal -Actual ($LASTEXITCODE -eq 0) -Expected $case.Pass -Message "$label must $(if ($case.Pass) { 'pass' } else { 'fail' })."
+        }
+    }
+    finally {
+        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+        Remove-Item -LiteralPath $scriptPath -ErrorAction SilentlyContinue
+    }
 }
