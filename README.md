@@ -1,180 +1,60 @@
-# Azure `azd` starter
+# __PROJECT_NAME__
 
-A universal starting point for Azure projects. Every project gets the same
-conventions layer — deterministic naming, an approved region catalog, a stable
-subscription code, common lifecycle tags, `azd` wiring, preflight validation and
-a test suite that enforces all of it. Infrastructure beyond that is opt-in.
+__DESCRIPTION__
 
-Start with `core` — a resource group, tags and monitoring — and add exactly the
-resources the project needs from the [module catalog](docs/modules.md). Step up
-to `private` when the project needs a VNet and private endpoints, or `full` when
-it needs a desktop inside that VNet.
+<!-- template:start -->
+> [!IMPORTANT]
+> **This is embergershared/azd-private-starter-template**, a starting point for Azure
+> projects. The Azure Developer CLI (`azd`) deploys subscription-scope modular Bicep with
+> deterministic naming, an approved region catalog, lifecycle tags and fail-closed preflight
+> checks. Start with `core` (a resource group and monitoring), add resources from the module
+> catalog, and step up to `private` or `full` when the project needs a network.
+>
+> Create a repository with **Use this template**, clone it, then run once (PowerShell, in its
+> folder):
+> ```powershell
+> ./scripts/init-from-template.ps1
+> ```
+> It creates the local tenant and subscription files; record your tenants in them, then
+> follow [docs/getting-started.md](docs/getting-started.md).
+<!-- template:end -->
 
-## Start here
+> [!NOTE]
+> This is a personal project, shared as is to help others. It is not an official Microsoft
+> product and is not supported by Microsoft. Review and test it before using any part of it
+> in your environment. See [docs/SUPPORT.md](docs/SUPPORT.md).
 
-1. Create your local tenant and subscription files with
-   `./scripts/init-from-template.ps1`, then record your tenants in them; see
-   [Local tenant and subscription files](docs/deployment.md#local-tenant-and-subscription-files).
-   They are gitignored: they name real tenants.
-2. Review [prerequisites and required roles](docs/deployment.md#prerequisites-and-roles).
-3. Choose a [deployment profile](#deployment-profiles) and, if needed,
-   [expert overrides](docs/configuration.md#expert-feature-overrides).
-4. Follow the gated [prepare → validate → deploy lifecycle](docs/deployment.md).
-5. Add the resources you need from the [module catalog](docs/modules.md).
+## Contents
 
-```powershell
-# Variables values
-$tenantId = '<tenant-guid>' # must be listed in infra/core/tenant-codes.json
-$subscriptionId = '<subscription-guid>'
-# Use a lowercase, unique 2-32 character environment name.
-$environment = 'my-azd-env-dev'
-$location = 'eastus2'
-$deploymentProfile = 'core' # core, private, or full
+<!-- Keep this README a table of contents: one line on the project above, then the pages.
+     Background, how-tos and long explanations go in docs/, one page per topic. -->
 
-# Commands execution
-az login --tenant $tenantId
-az account set --subscription $subscriptionId
-azd auth login --tenant-id $tenantId
-azd env new $environment --subscription $subscriptionId --location $location
-azd env set DEPLOYMENT_PROFILE $deploymentProfile
-.\scripts\set-deployment-tags.ps1
-azd provision --preview -e $environment
-```
+**Use it**
 
-The `full` profile additionally requires an operator principal, because it
-grants VM sign-in rights:
-
-```powershell
-azd env set AZURE_OPERATOR_PRINCIPAL_IDS (az ad signed-in-user show --query id --output tsv)
-```
-
-It also deploys into resource providers that `core` never touches.
-`Microsoft.DevTestLab`, which backs the VM auto-shutdown schedules, is the one
-most often unregistered. Preflight names every unregistered provider with the
-command that registers it, and registers them itself only when you ask:
-
-```powershell
-.\scripts\preflight.ps1 -RegisterProviders
-```
-
-Once provisioned, only operators can sign in to a jumpbox, and
-`./scripts/connect-jumpbox.ps1` opens a windowed RDP session through Bastion;
-see [Bastion access](docs/deployment.md#standard-bastion-access-full-profile-only).
-
-Preview is not deployment. Do not run `azd provision` or `azd up` until the
-validation gate and deployment approval are complete.
-
-Run `set-deployment-tags.ps1` once after creating an environment. AZD resolves
-required Bicep inputs before `preprovision` hooks run; the script seeds those
-first-use values, including the stable subscription code, and the hook refreshes
-update metadata on later provisions. When `AZURE_SUBSCRIPTION_ID` is not set,
-the script uses the subscription the Azure CLI is signed in to, and both scripts
-fail if the Azure CLI and `azd` target different subscriptions. The subscription
-code comes from a final `-<N>` display-name token (`-1` gives `s1`), a delimited
-`s<N>` token (`Contoso-s2-Sandbox` gives `s2`), or the subscription ID. To
-target another tenant or subscription, see
-[Deploy to another tenant or subscription](docs/deployment.md#deploy-to-another-tenant-or-subscription).
-
-## Deployment profiles
-
-Set the profile in the selected AZD environment before previewing or
-provisioning:
-
-```powershell
-azd env set DEPLOYMENT_PROFILE core # core, private, or full
-```
-
-Profiles are a cumulative ladder. Each rung adds to the one below it:
-
-| `DEPLOYMENT_PROFILE` | Deploys | Use it when |
-|---|---|---|
-| `core` *(default)* | Resource group, common tags, Log Analytics, and Application Insights | The project has no networking requirement — the majority of projects |
-| `private` | Everything in `core`, plus VNet, subnets and NSGs, private DNS zones, and a private Key Vault and Storage account | The project must be private by default |
-| `full` | Everything in `private`, plus Standard Bastion, Windows 11 and Ubuntu jumpboxes, NAT Gateway, Entra VM login, operator RBAC, and VM auto-shutdown | Someone needs a desktop inside the VNet |
-
-`core` deploys no virtual network, no private endpoints, and no private DNS. It
-does not force Key Vault or Storage on a project either — those are catalog
-modules you opt into.
-
-Any other value fails preflight. Environments still set to the retired
-`minimal` profile must switch with `azd env set DEPLOYMENT_PROFILE private`.
-
-Moving down the ladder stops deploying disabled resources; ARM incremental
-deployments can retain the existing VNet, Bastion, VMs and other resources, which
-may continue billing. Inspect `azd provision --preview` before a profile change.
-Cleanup is a separate, explicitly approved operation after reviewing data
-retention, identities, dependencies and rollback/recovery; a downgrade is not cleanup.
-
-For combinations between the rungs, use the documented
-[expert feature overrides](docs/configuration.md#expert-feature-overrides).
-Dependency validation still applies; for example, jumpbox VMs require Bastion,
-and Entra VM login requires NAT egress.
-
-## What is always present
-
-The conventions layer ships with every profile, including `core`:
-
-| Location | What it provides |
+| Page | What it covers |
 |---|---|
-| `infra/core/naming.bicep` | Exported naming functions — the single definition of the naming contract |
-| `infra/core/tags.bicep` | The exported common-tag function |
-| `infra/core/private-endpoint.bicep` | The one private endpoint and DNS pattern every module uses |
-| `infra/core/abbreviations.json` | Approved Cloud Adoption Framework resource abbreviations |
-| `infra/core/tenant-codes.json` | The approved tenant-code catalog, keyed by Entra tenant ID; gitignored, local to each clone, started from `tenant-codes.example.json` |
-| `docs/targets.md` | This clone's tenants, subscriptions and default target; gitignored, local to each clone, started from `targets.example.md` |
-| `scripts/init-from-template.ps1` | Creates the two local files above from their examples when they are missing; never overwrites them |
-| `infra/core/location-codes.json` | The approved region-code catalog |
-| `infra/core/name-rules.json` | Per-resource length, charset and scope rules |
-| `scripts/preflight.ps1` | Fail-closed validation before any deployment; `-RegisterProviders` registers missing resource providers on request |
-| `scripts/set-deployment-tags.ps1` | Subscription code, lifecycle tags, and override transport |
-| `tests/` | The suite that proves names, rules, catalog and profiles are intact |
+| [docs/getting-started.md](docs/getting-started.md) | **Start here:** local tenant files, a first environment and preview, profiles, adding resources, tests |
+| [docs/architecture.md](docs/architecture.md) | The conventions layer, profiles, network, naming contract, extension points |
+| [docs/configuration.md](docs/configuration.md) | Profiles, environment values, preflight, expert overrides, resource naming |
+| [docs/deployment.md](docs/deployment.md) | Prerequisites and roles, prepare → validate → deploy, Bastion access, cost and teardown |
+| [docs/modules.md](docs/modules.md) | The module catalog and its lifecycle scripts |
+| [docs/security.md](docs/security.md) | Public exceptions, private DNS, monitoring access, break glass |
+| [docs/ci-deployment.md](docs/ci-deployment.md) | Pull request deployments into throwaway environments |
+| [docs/SUPPORT.md](docs/SUPPORT.md) | Questions, bugs, and what support to expect |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Changes |
 
-## Adding resources
+**Contribute**
 
-Resources live in a self-describing catalog under `infra/modules/`. Each module
-carries its own `metadata.json`, and preflight's provider list, the private DNS
-zone list and the documentation tables are all derived from it.
+Every change starts with an issue, gets its own `<type>/<issue>-<slug>` branch, and reaches
+`main` only through a PR that closes the issue.
 
-```powershell
-./scripts/new-module.ps1 -Name service-bus -Abbreviation sbns -Provider Microsoft.ServiceBus -ResourceType Microsoft.ServiceBus/namespaces -ApiVersion 2022-10-01-preview
-./scripts/add-module.ps1 -Module service-bus    # generate supported wiring; complete printed declarations
-./scripts/promote-module.ps1 -From <path>       # bring a proven module back into the catalog
-./scripts/adopt-conventions.ps1 -Path <repo>    # push the conventions into an existing repo
-```
+| Page | What it covers |
+|---|---|
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md), [docs/CODE_OF_CONDUCT.md](docs/CODE_OF_CONDUCT.md) | How to contribute |
+| [.github/copilot-instructions.md](.github/copilot-instructions.md), [.github/instructions/](.github/instructions/) | The full rules, for people and AI coding assistants, and the per-language ones |
+| [docs/decisions/](docs/decisions/) | Decision records |
+| [.github/SECURITY.md](.github/SECURITY.md) | Reporting a vulnerability |
 
-See [the module catalog](docs/modules.md) for the contract, the current
-catalog, and how to author and promote a module.
+## License
 
-## Testing
-
-```powershell
-./tests/run-tests.ps1
-```
-
-The suite proves that resource names have not drifted, that every name obeys its
-resource rules, that the catalog is in sync, that all Bicep builds and lints
-clean, that every module's dependencies still resolve to well-formed resource
-IDs when its optional inputs keep their defaults, and that `core` produces no
-`Microsoft.Network` or `Microsoft.Compute` resources.
-
-Pull requests that change infrastructure can also be deployed for real before
-they merge. Throwaway `core` and `private` environments are previewed,
-provisioned, checked and torn down, and `full` is deployed on request. It is
-off until you create the deployment identity; see
-[pull request deployments](docs/ci-deployment.md).
-
-## Documentation
-
-- [Architecture and extension points](docs/architecture.md)
-- [Module catalog and lifecycle scripts](docs/modules.md)
-- [Profiles and expert overrides](docs/configuration.md)
-- [Deployment, access, cost, and teardown](docs/deployment.md)
-- [Pull request deployments](docs/ci-deployment.md)
-- [Security, private DNS, monitoring access, and break glass](docs/security.md)
-- [Rules for contributors and AI agents](.github/copilot-instructions.md), with the
-  per-language ones in [`.github/instructions/`](.github/instructions/)
-
-Environments deployed by an earlier revision with Azure Monitor private link
-require the ordered cleanup described in
-[deployment migration guidance](docs/deployment.md#migrating-an-environment-that-previously-used-azure-monitor-private-link)
-before reprovisioning.
+[MIT](LICENSE)
