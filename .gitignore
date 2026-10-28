@@ -1,15 +1,3 @@
-# Squad: ignore runtime state (logs, inbox, sessions)
-.squad/orchestration-log/
-.squad/log/
-.squad/decisions/inbox/
-.squad/sessions/
-.squad/.scratch/
-.squad/.cache/
-# Squad: SubSquad activation file (local to this machine)
-.squad-workstream
-# Squad upgrades keep the replaced files as local backups
-*.local-backup
-
 # Azure Developer CLI local environment state and generated artifacts
 .azure/*/
 .env
