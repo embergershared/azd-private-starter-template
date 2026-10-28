@@ -43,8 +43,16 @@ jobs:
       CI_FEATURE_OVERRIDES_JSON: ${{ vars.CI_FEATURE_OVERRIDES_JSON || '{}' }}
       CI_PROFILE: ${{ inputs.profile }}
       CI_PULL_REQUEST: ${{ github.event.pull_request.number || 0 }}
+      CI_TENANT_CODE: ${{ vars.CI_TENANT_CODE }}
     steps:
       - uses: actions/checkout@v4
+
+      # The tenant catalog is gitignored; Bicep and preflight need it.
+      - name: Write the tenant catalog
+        shell: pwsh
+        run: |
+          . ./scripts/ci-environments.ps1
+          New-CiTenantCatalog -TenantId $env:AZURE_TENANT_ID -TenantCode $env:CI_TENANT_CODE -Path infra/core/tenant-codes.json
 
       - name: Install azd
         uses: Azure/setup-azd@v2

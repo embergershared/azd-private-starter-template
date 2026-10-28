@@ -52,8 +52,11 @@ commands from a shell where the Azure CLI and the GitHub CLI are signed in.
 
 ### 1. Check the target subscription
 
-- List the tenant in `infra/core/tenant-codes.json`. Preflight fails for an
-  unlisted tenant.
+- Pick the tenant's code. The tenant catalog, `infra/core/tenant-codes.json`,
+  is gitignored, so the runner has none: each deployment job writes one that
+  holds only `AZURE_TENANT_ID` with the code in `CI_TENANT_CODE` (step 5). Use
+  the code your own catalog gives the tenant, so the throwaway resources are
+  named like your other environments.
 - Register the resource providers once. The workflow never registers them:
 
   ```powershell
@@ -141,6 +144,7 @@ use the `refs/pull/<n>/merge` ref, which a branch policy would block.
 | `AZURE_CLIENT_ID` | The app registration's client ID. Setting it turns the workflows on | Yes |
 | `AZURE_TENANT_ID` | The tenant GUID | Yes |
 | `AZURE_SUBSCRIPTION_ID` | The target subscription GUID | Yes |
+| `CI_TENANT_CODE` | The tenant's code, 2-12 lowercase letters and digits, as in your `infra/core/tenant-codes.json` | Yes |
 | `AZURE_LOCATION` | The region; defaults to `eastus2` | No |
 | `CI_OPERATOR_PRINCIPAL_IDS` | Operator object IDs for the deployed environments, normally the identity's own | For `full` with role assignments |
 | `CI_FEATURE_OVERRIDES_JSON` | Expert overrides applied to every run, such as `{"roleAssignments":false}` | No |
@@ -148,6 +152,7 @@ use the `refs/pull/<n>/merge` ref, which a branch policy would block.
 ```powershell
 gh variable set AZURE_TENANT_ID --body <tenant-guid>
 gh variable set AZURE_SUBSCRIPTION_ID --body <subscription-guid>
+gh variable set CI_TENANT_CODE --body <tenant-code>
 gh variable set CI_OPERATOR_PRINCIPAL_IDS --body $sp.id
 gh variable set AZURE_CLIENT_ID --body $app.appId
 ```
