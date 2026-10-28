@@ -41,9 +41,13 @@ function Get-TestBash {
     if ($IsWindows) {
         $git = Get-Command git -ErrorAction SilentlyContinue
         if ($git) {
-            # git.exe sits in <Git>\cmd or <Git>\bin; bash.exe is in <Git>\bin.
-            $candidate = Join-Path (Split-Path -Parent (Split-Path -Parent $git.Source)) 'bin\bash.exe'
-            if (Test-Path -LiteralPath $candidate) { return $candidate }
+            # git.exe sits in <Git>\cmd, <Git>\bin or <Git>\mingw64\bin; bash.exe is in <Git>\bin.
+            $folder = Split-Path -Parent $git.Source
+            for ($level = 0; $level -lt 3 -and $folder; $level++) {
+                $folder = Split-Path -Parent $folder
+                $candidate = Join-Path $folder 'bin\bash.exe'
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
+            }
         }
         return $null
     }
