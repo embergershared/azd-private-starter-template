@@ -197,10 +197,11 @@ for data migration, retained resources, downtime, and additional cost before
 provisioning an existing environment.
 
 `infra/core/tenant-codes.json` maps each Entra tenant ID to a display name and a
-short code. A repository created from the template starts from
-`tenant-codes.example.json`, whose only entry is a placeholder. Preflight fails
-closed for a tenant that is not listed. Add a tenant before its first
-deployment, and record it in [`docs/targets.md`](targets.md):
+short code. It is gitignored and local to each clone, which starts it from
+`tenant-codes.example.json`, whose only entry is a placeholder (see
+[Local tenant and subscription files](deployment.md#local-tenant-and-subscription-files)).
+Preflight fails closed for a tenant that is not listed. Add a tenant before its
+first deployment, and record it in your local `docs/targets.md`:
 
 ```json
 "<tenant-guid>": { "name": "Contoso", "code": "123456" }
