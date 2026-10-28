@@ -5,9 +5,9 @@ throwaway environments before it merges. The workflows preview the change,
 deploy it for real, check the result, and always tear it down. A failure in
 any of those steps fails the pull request's check.
 
-Nothing runs until you complete the setup below. Until the `AZURE_CLIENT_ID`
-repository variable is set, every job is skipped. That includes repositories
-created from this template.
+Nothing runs until you complete the setup below. Until the
+`PR_DEPLOYMENT_ENABLED` repository variable is `true`, every job is skipped.
+That includes repositories created from this template.
 
 ## What runs and when
 
@@ -27,8 +27,10 @@ Each deployment runs these steps in a throwaway azd environment named
    It sets `AZURE_KEY_VAULT_PURGE_PROTECTION=false` so the vault can be purged
    on teardown.
 3. **What-if.** It runs `azd provision --preview`, which also runs preflight.
-   The result is posted on the pull request as one comment per profile, which
-   later runs update in place, and in the run summary.
+   The counts, such as `Resources: 12 to create, 0 to modify, 0 to delete, 1
+   unchanged.`, are posted on the pull request as one comment per profile,
+   which later runs update in place, and in the run summary. The resources and
+   their changes are only in the run log; see [Public logs](#public-logs).
 4. **Provision.** It runs `azd provision`.
 5. **Check.** `scripts/test-deployment.ps1` confirms that the resource group
    carries the environment's tags, that every resource finished provisioning,
@@ -43,6 +45,23 @@ Each deployment runs these steps in a throwaway azd environment named
 The teardown and the nightly cleanup only delete a resource group when its
 `repository` tag is this repository and its `azd-env-name` tag matches the
 throwaway naming pattern. No other resource group is ever touched.
+
+## Public logs
+
+Anyone can read a public repository's run logs, job summaries and pull request
+comments. The workflows follow `.github/instructions/workflows.instructions.md`:
+
+- The tenant, subscription and client IDs, the tenant code and the operator
+  IDs are **secrets**, so GitHub masks them in the logs. A repository variable
+  would be printed as is.
+- Each job that signs in to Azure first runs `.github/actions/mask-values`,
+  which also masks each GUID inside those secrets, such as one operator ID out
+  of the list.
+- The summary and the pull request comment carry the what-if counts only.
+- Pull requests from forks get neither the secrets nor an Azure token.
+
+If something leaked, delete the workflow run, which removes its logs and
+summary, then rotate what can be rotated.
 
 ## Setup
 
@@ -93,7 +112,8 @@ foreach ($credential in @(
 Remove-Item fic.json
 ```
 
-No secret is created, and none is stored in GitHub.
+No client secret is created. GitHub stores the IDs as secrets only so its
+public logs mask them.
 
 ### 3. Grant it roles on the subscription
 
@@ -137,24 +157,39 @@ gh label create deploy-full --description 'Deploy the full profile for this pull
 Leave the environment's deployment branches unrestricted. Pull request runs
 use the `refs/pull/<n>/merge` ref, which a branch policy would block.
 
-### 5. Set the repository variables
+### 5. Set the repository secrets and variables
 
-| Variable | Value | Required |
-|---|---|---|
-| `AZURE_CLIENT_ID` | The app registration's client ID. Setting it turns the workflows on | Yes |
-| `AZURE_TENANT_ID` | The tenant GUID | Yes |
-| `AZURE_SUBSCRIPTION_ID` | The target subscription GUID | Yes |
-| `CI_TENANT_CODE` | The tenant's code, 2-12 lowercase letters and digits, as in your `infra/core/tenant-codes.json` | Yes |
-| `AZURE_LOCATION` | The region; defaults to `eastus2` | No |
-| `CI_OPERATOR_PRINCIPAL_IDS` | Operator object IDs for the deployed environments, normally the identity's own | For `full` with role assignments |
-| `CI_FEATURE_OVERRIDES_JSON` | Expert overrides applied to every run, such as `{"roleAssignments":false}` | No |
+Identifiers are repository **secrets**, so the public logs mask them. Only the
+on/off switch, the region and the overrides are **variables**.
+
+| Name | Kind | Value | Required |
+|---|---|---|---|
+| `AZURE_CLIENT_ID` | Secret | The app registration's client ID | Yes |
+| `AZURE_TENANT_ID` | Secret | The tenant GUID | Yes |
+| `AZURE_SUBSCRIPTION_ID` | Secret | The target subscription GUID | Yes |
+| `CI_TENANT_CODE` | Secret | The tenant's code, 2-12 lowercase letters and digits, as in your `infra/core/tenant-codes.json` | Yes |
+| `CI_OPERATOR_PRINCIPAL_IDS` | Secret | Comma-separated operator object IDs for the deployed environments, normally the identity's own | For `full` with role assignments |
+| `PR_DEPLOYMENT_ENABLED` | Variable | `true` turns the workflows on; anything else keeps them skipped | Yes |
+| `AZURE_LOCATION` | Variable | The region; defaults to `eastus2` | No |
+| `CI_FEATURE_OVERRIDES_JSON` | Variable | Expert overrides applied to every run, such as `{"roleAssignments":false}` | No |
+
+`gh secret set` reads the value from the pipeline, so it never sits on a
+command line. Set the switch last:
 
 ```powershell
-gh variable set AZURE_TENANT_ID --body <tenant-guid>
-gh variable set AZURE_SUBSCRIPTION_ID --body <subscription-guid>
-gh variable set CI_TENANT_CODE --body <tenant-code>
-gh variable set CI_OPERATOR_PRINCIPAL_IDS --body $sp.id
-gh variable set AZURE_CLIENT_ID --body $app.appId
+'<tenant-guid>' | gh secret set AZURE_TENANT_ID
+'<subscription-guid>' | gh secret set AZURE_SUBSCRIPTION_ID
+'<tenant-code>' | gh secret set CI_TENANT_CODE
+$sp.id | gh secret set CI_OPERATOR_PRINCIPAL_IDS
+$app.appId | gh secret set AZURE_CLIENT_ID
+gh variable set PR_DEPLOYMENT_ENABLED --body true
+```
+
+If you set these up before the IDs became secrets, delete the old variables:
+
+```powershell
+'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'CI_TENANT_CODE', 'CI_OPERATOR_PRINCIPAL_IDS' |
+    ForEach-Object { gh variable delete $_ }
 ```
 
 ### 6. Make the check block merges

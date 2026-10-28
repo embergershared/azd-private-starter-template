@@ -47,7 +47,7 @@ Test-Case 'the runner gets a one-tenant catalog that naming accepts, and bad var
     }
     Assert-True -Condition (-not (Test-Path -LiteralPath $unused)) -Message 'A failed call must write nothing.'
     $deploy = Get-Content -LiteralPath (Join-Path $workflowRoot 'deploy-environment.yml') -Raw
-    Assert-Match -Actual $deploy -Pattern '(?s)actions/checkout@v4\s+.*?- name: Write the tenant catalog.*?- name: Sign the Azure CLI in' `
+    Assert-Match -Actual $deploy -Pattern '(?s)actions/checkout@\S+\s+.*?- name: Write the tenant catalog.*?- name: Sign the Azure CLI in' `
         -Message 'The job must write the catalog before anything compiles Bicep.'
 }
 
@@ -73,20 +73,42 @@ Test-Case 'only infrastructure changes deploy, and a manual run deploys its one 
         -Message 'One profile must still serialize as an array for the matrix.'
 }
 
-Test-Case 'the what-if comment is marked, readable and bounded' {
-    $preview = "`e[32mCreate`e[0m : Resource group`r`nModify : vnet with ``````fenced`````` text`n" + ('x' * 200)
+Test-Case 'the what-if comment carries the counts only, never a resource name or ID' {
+    # azd's layout (pkg/output/ux/preview_provision.go): padded operation, type and
+    # name, colored, with property changes indented below. Fictitious values.
+    $preview = @(
+        'Previewing Azure resource changes'
+        ''
+        '  Resources:'
+        ''
+        "  `e[32mCreate :`e[0m Resource group  : rg-cal01-pr1-core-2-1"
+        "  `e[32mCreate :`e[0m Key Vault       : kv-cal01-secretname"
+        '      + properties.tenantId: "00000000-1111-2222-3333-444444444444"'
+        "  `e[33mModify :`e[0m Log Analytics   : log-cal01-pr1"
+        '      ~ properties.retentionInDays: 30 => 60'
+        "  `e[90mSkip   :`e[0m Managed Identity : id-cal01-pr1"
+        "  `e[31mDelete :`e[0m Private endpoint : pe-cal01-old"
+    ) -join "`r`n"
+    $counts = Get-PreviewCounts -Preview $preview
+    Assert-Equal -Actual (($counts.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',') `
+        -Expected 'Create=2,Modify=1,Delete=1,Deploy=0,Skip=1,Unsupported=0' -Message 'Each resource line counts once, by its operation; property lines do not count.'
+
     $comment = ConvertTo-PreviewComment -DeploymentProfile core -EnvironmentName pr1-core-2-1 -Preview $preview `
-        -Outcome success -RunUrl 'https://example.test/run' -MaxPreviewLength 120
+        -Outcome success -RunUrl 'https://example.test/run'
     $lines = $comment -split "`n"
     Assert-Equal -Actual $lines[0] -Expected '<!-- pr-deployment:core -->' -Message 'The marker must be the first line so later runs edit the same comment.'
-    Assert-NotMatch -Actual $comment -Pattern "`e" -Message 'Terminal color codes must be stripped.'
-    Assert-Match -Actual $comment -Pattern 'Create : Resource group' -Message 'The preview text must survive.'
-    Assert-Match -Actual $comment -Pattern 'truncated' -Message 'An oversized preview must be truncated with a note.'
-    Assert-Match -Actual $comment -Pattern '(?m)^````+text$' -Message 'The fence must be longer than any backtick run in the preview.'
+    Assert-Match -Actual $comment -Pattern 'Resources: 2 to create, 1 to modify, 1 to delete, 1 unchanged\.' -Message 'The comment must give the counts.'
+    foreach ($leak in @('cal01', 'secretname', '00000000-1111', 'retentionInDays', "`e")) {
+        Assert-NotMatch -Actual $comment -Pattern ([regex]::Escape($leak)) -Message "The comment is public: '$leak' from the preview must not reach it."
+    }
     Assert-Match -Actual $comment -Pattern '\[Run log\]\(https://example\.test/run\)' -Message 'The comment must link the run.'
-    $failed = ConvertTo-PreviewComment -DeploymentProfile full -EnvironmentName pr1-full-2-1 -Preview '' -Outcome failure
+
+    $failed = ConvertTo-PreviewComment -DeploymentProfile full -EnvironmentName pr1-full-2-1 -Preview 'ERROR: deployment failed' -Outcome failure
     Assert-Match -Actual $failed -Pattern 'pr1-full-2-1` failed' -Message 'A failed preview must say so.'
-    Assert-Match -Actual $failed -Pattern '\(no output\)' -Message 'An empty preview must still render.'
+    Assert-Match -Actual $failed -Pattern 'none counted' -Message 'A failed preview has no counts.'
+    Assert-NotMatch -Actual $failed -Pattern 'ERROR' -Message 'Not even an error message from the preview reaches the comment.'
+    $empty = ConvertTo-PreviewComment -DeploymentProfile core -EnvironmentName pr1-core-2-1 -Preview '' -Outcome success
+    Assert-Match -Actual $empty -Pattern 'listed no resources' -Message 'An empty successful preview must say so.'
 }
 
 function Invoke-RemoveFixture {
@@ -251,7 +273,7 @@ Test-Case 'the deployment workflows are gated, never cancel a teardown and keep 
     foreach ($file in $files) {
         $text = Get-Content -LiteralPath (Join-Path $workflowRoot $file) -Raw
         if ($file -ne 'deploy-environment.yml') {
-            Assert-Match -Actual $text -Pattern "vars\.AZURE_CLIENT_ID != ''" -Message "'$file' must stay skipped until the repository is set up."
+            Assert-Match -Actual $text -Pattern "vars\.PR_DEPLOYMENT_ENABLED == 'true'" -Message "'$file' must stay skipped until the repository is set up."
         }
         Assert-NotMatch -Actual $text -Pattern 'cancel-in-progress:\s*true' -Message "'$file' must never cancel a run whose teardown is pending."
     }
@@ -285,4 +307,58 @@ Test-Case 'the deployment workflows are gated, never cancel a teardown and keep 
             }
         }
     }
+}
+
+Test-Case 'the deployment workflows keep identifiers secret, mask them first and pin every action' {
+    $files = @('deploy-environment.yml', 'pr-deployment.yml', 'pr-deployment-full.yml', 'pr-deployment-cleanup.yml')
+    foreach ($file in $files) {
+        $text = Get-Content -LiteralPath (Join-Path $workflowRoot $file) -Raw
+        # Variables are printed unmasked in public logs; identifiers are secrets.
+        foreach ($name in @('AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'CI_TENANT_CODE', 'CI_OPERATOR_PRINCIPAL_IDS')) {
+            Assert-NotMatch -Actual $text -Pattern "vars\.$name\b" -Message "'$file' must read $name from a secret."
+        }
+        foreach ($use in [regex]::Matches($text, '(?m)^\s*(?:- )?uses:\s*(?<ref>\S+)(?<rest>.*)$')) {
+            $ref = $use.Groups['ref'].Value
+            if ($ref.StartsWith('./')) { continue }
+            Assert-Match -Actual $ref -Pattern '^[\w.-]+/[\w.-]+@[0-9a-f]{40}$' -Message "'$file' must pin '$ref' by commit SHA."
+            Assert-Match -Actual $use.Groups['rest'].Value -Pattern '^\s+# v\d+\.\d+\.\d+$' -Message "'$file' must name the version of '$ref' in a comment."
+        }
+        foreach ($checkout in [regex]::Matches($text, '(?m)^(?<pad>\s*)- uses: actions/checkout@.*\r?\n(?<with>(?:\k<pad>  .*\r?\n)+)')) {
+            Assert-Match -Actual $checkout.Groups['with'].Value -Pattern 'persist-credentials: false' -Message "'$file' must not keep the token on a checkout."
+        }
+        Assert-Equal -Actual ([regex]::Matches($text, '(?m)^\s*- uses: actions/checkout@').Count) `
+            -Expected ([regex]::Matches($text, 'persist-credentials: false').Count) -Message "Every checkout in '$file' must drop the token."
+        # Every job that runs steps has a timeout; a job that calls a reusable workflow cannot.
+        foreach ($job in [regex]::Split(($text -split '(?m)^jobs:\s*$')[1], '(?m)^(?=  [\w-]+:\s*$)') | Where-Object { $_.Trim() }) {
+            if ($job -match '(?m)^    runs-on:') {
+                Assert-Match -Actual $job -Pattern '(?m)^    timeout-minutes: \d+' -Message "Every job in '$file' must have a timeout."
+            }
+        }
+        if ($text -match 'azure/login@') {
+            Assert-Match -Actual $text -Pattern '(?s)- uses: actions/checkout@[^\n]*\n(?:\s+[^\n]*\n)*?\s*\n\s+(?:#[^\n]*\n\s+)*- uses: \./\.github/actions/mask-values' `
+                -Message "'$file' must mask the identifiers right after the checkout, before it signs in."
+        }
+    }
+    Assert-True -Condition (Test-Path -LiteralPath (Get-RepoPath '.github/actions/mask-values/mask-values.sh')) -Message 'The masking action must be in the repository.'
+}
+
+Test-Case 'the masking action masks each GUID inside a list and skips short values' {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    $jq = Get-Command jq -ErrorAction SilentlyContinue
+    if (-not $bash -or -not $jq) {
+        Write-Warning 'bash or jq is missing: the masking action was not run.'
+        return
+    }
+    $script = Get-RepoPath '.github/actions/mask-values/mask-values.sh'
+    $env:MASK_MIN_LENGTH = '4'
+    try {
+        $out = @("11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000`nab`ncal01" | & $bash.Source $script)
+    }
+    finally {
+        Remove-Item Env:MASK_MIN_LENGTH
+    }
+    foreach ($value in @('66666666-7777-8888-9999-000000000000', '11111111-2222-3333-4444-555555555555', 'cal01')) {
+        Assert-True -Condition ($out -contains "::add-mask::$value") -Message "'$value' must be masked on its own."
+    }
+    Assert-True -Condition (-not ($out -contains '::add-mask::ab')) -Message 'A value shorter than the minimum is not masked.'
 }
