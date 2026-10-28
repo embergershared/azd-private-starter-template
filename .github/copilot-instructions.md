@@ -155,9 +155,11 @@ workflow is `.github/workflows/infra-validation.yml`.
 
 ## Architecture
 
-- The only GitHub Actions workflows are `infra-validation.yml`, which validates
-  infrastructure changes on pull requests, and `template-init.yml`, which
-  replaces the template owner's specifics in a new repository.
+- The only GitHub Actions workflow is `infra-validation.yml`, which validates
+  infrastructure changes on pull requests. `infra/core/tenant-codes.json` and
+  `docs/targets.md` name real tenants: they are gitignored, created from their
+  committed `.example` files by `scripts/init-from-template.ps1`, and never
+  committed. Put only fictitious values in the examples.
 
 ## Repository conventions
 
