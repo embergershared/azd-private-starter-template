@@ -41,6 +41,8 @@ __DESCRIPTION__
 | [docs/security.md](docs/security.md) | Public exceptions, private DNS, monitoring access, break glass |
 | [docs/ci-cd.md](docs/ci-cd.md) | CI, PR rules, public logs and the repository settings |
 | [docs/ci-deployment.md](docs/ci-deployment.md) | Pull request deployments into throwaway environments |
+| [docs/supply-chain.md](docs/supply-chain.md) | Package feeds, lock files and the 7-day age gate |
+| [docs/database.md](docs/database.md) | Database changes: migration, backup, way back |
 | [docs/SUPPORT.md](docs/SUPPORT.md) | Questions, bugs, and what support to expect |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | Changes |
 

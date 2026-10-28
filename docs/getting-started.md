@@ -137,6 +137,22 @@ zone list and the documentation tables are all derived from it.
 See [the module catalog](modules.md) for the contract, the current catalog, and
 how to author and promote a module.
 
+## Add .NET or Python code
+
+The template carries no application code, only the scaffolding for it. Code goes
+under `src/`, one folder per app or package, and tests under `tests/`. CI builds,
+lints and tests a stack as soon as the repository has it.
+
+| Stack | Scaffolding | CI runs it when |
+|---|---|---|
+| .NET | `global.json` (SDK), `Directory.Build.props` (defaults, lock files), `Directory.Packages.props` (central versions), `nuget.config` (approved feed) | a `*.slnx`, `*.sln` or `*.csproj` is tracked |
+| Python | `.python-version`, `ruff.toml`, `scripts/lock_requirements.py` (hash-locked `requirements*.lock`) | `requirements-dev.lock` or `requirements.lock` is tracked |
+
+Either way, every locked package must be at least 7 days old
+([supply-chain.md](supply-chain.md)), and a database change goes through a
+migration, a backup and a way back ([database.md](database.md)). A project that
+uses neither stack can delete its files.
+
 ## Test
 
 ```powershell
