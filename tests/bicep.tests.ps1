@@ -379,3 +379,20 @@ Test-Case 'role assignments can be turned off without touching the profile' {
     Assert-Equal -Actual $flags.deployWindowsVm -Expected $true `
         -Message 'Disabling role assignments must not change what is deployed.'
 }
+
+Test-Case 'Key Vault purge protection stays on by default and only an explicit false turns it off' {
+    $main = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra/main.bicep')
+    Assert-Equal -Actual $main.parameters.enableKeyVaultPurgeProtection.defaultValue -Expected $true `
+        -Message 'main.bicep must default purge protection on.'
+    $parameters = Get-Content -LiteralPath (Get-RepoPath 'infra/main.parameters.json') -Raw | ConvertFrom-Json
+    Assert-Equal -Actual $parameters.parameters.enableKeyVaultPurgeProtection.value -Expected '${AZURE_KEY_VAULT_PURGE_PROTECTION=true}' `
+        -Message 'An environment that never sets the value must keep purge protection.'
+    $keyVaultDeployment = $main.resources.keyVault
+    Assert-Equal -Actual $keyVaultDeployment.properties.parameters.enablePurgeProtection.value -Expected "[parameters('enableKeyVaultPurgeProtection')]" `
+        -Message 'main.bicep must pass the switch to the key-vault module.'
+    $module = Get-CompiledTemplate -BicepPath (Get-RepoPath 'infra/modules/key-vault/main.bicep')
+    Assert-Equal -Actual $module.parameters.enablePurgeProtection.defaultValue -Expected $true -Message 'The module must default purge protection on.'
+    $vault = @($module.resources | Where-Object { $_.type -eq 'Microsoft.KeyVault/vaults' })[0]
+    Assert-Equal -Actual $vault.properties.enablePurgeProtection -Expected "[if(parameters('enablePurgeProtection'), true(), null())]" `
+        -Message 'The vault must omit the property, never send false, which Key Vault rejects.'
+}

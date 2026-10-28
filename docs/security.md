@@ -73,6 +73,11 @@ Key Vault is RBAC-enabled, purge-protected, public-disabled, and
 retrieve secure secret values for VM provisioning; it does not make the vault
 public or expose secrets as outputs.
 
+Purge protection is on unless `AZURE_KEY_VAULT_PURGE_PROTECTION` is `false`.
+Only the throwaway [pull request deployments](ci-deployment.md) turn it off,
+because their teardown must purge the vault so its name is free again. Never
+turn it off for an environment that holds secrets you need to keep.
+
 The passwords use Bicep-generated secure defaults. **Reprovisioning generates
 and stores new values**, and VMAccess extensions reset the guest accounts to
 the same values before the deployment succeeds. Previously retrieved values
