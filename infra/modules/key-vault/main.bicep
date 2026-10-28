@@ -26,6 +26,8 @@ param linuxAdminUsername string
 param linuxAdminPassword string = newGuid()
 param enableRoleAssignments bool = true
 param operatorPrincipalIds array = []
+@description('Turn on purge protection. Keep it on for any environment that holds real secrets. Turn it off only for throwaway environments, such as pull request deployments, whose vault must be purged on teardown. It cannot be turned off on a vault that already has it.')
+param enablePurgeProtection bool = true
 
 var keyVaultSecretsUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -49,7 +51,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     }
     accessPolicies: []
     enableRbacAuthorization: true
-    enablePurgeProtection: true
+    // The property accepts only true. Omitting it leaves purge protection off.
+    enablePurgeProtection: enablePurgeProtection ? true : null
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enabledForDeployment: false

@@ -48,6 +48,7 @@ and rollback/recovery; changing profiles does not guarantee deletion.
 | `AZURE_REPOSITORY` | Repository name used for the `repository` tag; derived from the git remote by `set-deployment-tags.ps1` | all profiles |
 | `AZURE_OPERATOR_PRINCIPAL_IDS` | Comma-separated Entra user/group object IDs: the accounts that sign in to the jumpboxes; `scripts/add-operator.ps1` resolves names and appends | when a VM or role assignments are enabled |
 | `AZURE_FEATURE_OVERRIDES_JSON` | Expert feature object; hook defaults to `{}` | optional |
+| `AZURE_KEY_VAULT_PURGE_PROTECTION` | `true` (default) or `false`. Set `false` only for throwaway environments that must purge their vault on teardown, as the [pull request deployments](ci-deployment.md) do. A vault that has purge protection keeps it | optional |
 
 `AZURE_OPERATOR_PRINCIPAL_IDS` is only required when the deployment grants VM
 sign-in or data-plane roles — that is, the `full` profile or an override that
