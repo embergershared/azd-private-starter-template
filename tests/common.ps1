@@ -26,6 +26,32 @@ function Get-RepoPath {
     return (Join-Path $script:RepoRoot $RelativePath)
 }
 
+function Get-TestBash {
+    <#
+    .SYNOPSIS
+        Returns the bash that runs the workflow scripts under test, or $null.
+    .DESCRIPTION
+        On Windows the first bash on PATH is often WSL's, which cannot read
+        Windows paths, so Git for Windows' bash comes first there.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    if ($IsWindows) {
+        $git = Get-Command git -ErrorAction SilentlyContinue
+        if ($git) {
+            # git.exe sits in <Git>\cmd or <Git>\bin; bash.exe is in <Git>\bin.
+            $candidate = Join-Path (Split-Path -Parent (Split-Path -Parent $git.Source)) 'bin\bash.exe'
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+        return $null
+    }
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash) { return $bash.Source }
+    return $null
+}
+
 function Get-CompiledTemplate {
     <#
     .SYNOPSIS
