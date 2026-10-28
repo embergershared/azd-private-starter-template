@@ -1,15 +1,20 @@
-# Azure Developer CLI local environment state and generated artifacts
-.azure/*/
+# ---- Secrets: never committed (the *.example / *.sample / *.template files are) ----
 .env
 .env.*
 !.env.example
+!.env.sample
+!.env.template
+config.env
+*.pfx
+*.pem
+*.key
+secrets.json
+
+# ---- Azure Developer CLI: local environment state; only the deployment plan is tracked ----
+.azure/**
+!.azure/deployment-plan.md
 *.bicep.cache
 infra/*.jsonc
-
-# AZD local state and generated artifacts
-.azure/**
-.azure/.gitignore
-!.azure/deployment-plan.md
 
 # Compiled ARM output. azd and az compile infra/main.bicep directly, so a
 # committed copy has no consumer and silently goes stale.
@@ -20,3 +25,53 @@ infra/main.json
 # committed .example files. See docs/deployment.md.
 infra/core/tenant-codes.json
 docs/targets.md
+
+# ---- Local data: databases, their WAL files and backups ----
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+backups/
+artifacts/
+
+# ---- .NET ----
+bin/
+obj/
+TestResults/
+*.trx
+*.user
+*.suo
+*.csproj.lscache
+.vs/
+*.nupkg
+*.snupkg
+BenchmarkDotNet.Artifacts/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---- Node (tooling only) ----
+node_modules/
+
+# ---- Editors and tools ----
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# ---- Logs and OS files ----
+logs/
+*.log
+Thumbs.db
+.DS_Store
