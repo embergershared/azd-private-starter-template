@@ -1,12 +1,15 @@
 name: Deploy a throwaway environment
 
 # Reusable. pr-deployment.yml and pr-deployment-full.yml call it once per
-# profile. It creates a throwaway azd environment, previews it (what-if),
-# provisions it, checks the result and always tears it down, even when an
-# earlier step fails or the run is cancelled. The environment's Key Vault is
-# created without purge protection so the teardown can purge it.
+# profile, with `secrets: inherit`. It creates a throwaway azd environment,
+# previews it (what-if), provisions it, checks the result and always tears it
+# down, even when an earlier step fails or the run is cancelled. The
+# environment's Key Vault is created without purge protection so the teardown
+# can purge it.
 #
-# Setup, identities and costs: docs/ci-deployment.md.
+# The repository is public, so its run logs are too: every identifier is a
+# secret, masked first, and the summary and pull request comment show only the
+# what-if counts. Setup, identities and costs: docs/ci-deployment.md.
 on:
   workflow_call:
     inputs:
@@ -35,17 +38,30 @@ jobs:
       id-token: write
       pull-requests: write
     env:
-      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       CI_LOCATION: ${{ vars.AZURE_LOCATION || 'eastus2' }}
-      CI_OPERATOR_PRINCIPAL_IDS: ${{ vars.CI_OPERATOR_PRINCIPAL_IDS }}
+      CI_OPERATOR_PRINCIPAL_IDS: ${{ secrets.CI_OPERATOR_PRINCIPAL_IDS }}
       CI_FEATURE_OVERRIDES_JSON: ${{ vars.CI_FEATURE_OVERRIDES_JSON || '{}' }}
       CI_PROFILE: ${{ inputs.profile }}
       CI_PULL_REQUEST: ${{ github.event.pull_request.number || 0 }}
-      CI_TENANT_CODE: ${{ vars.CI_TENANT_CODE }}
+      CI_TENANT_CODE: ${{ secrets.CI_TENANT_CODE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # GitHub masks each secret whole; this also masks each GUID inside them,
+      # so one operator ID out of the list stays masked.
+      - uses: ./.github/actions/mask-values
+        with:
+          values: |
+            ${{ secrets.AZURE_TENANT_ID }}
+            ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+            ${{ secrets.AZURE_CLIENT_ID }}
+            ${{ secrets.CI_TENANT_CODE }}
+            ${{ secrets.CI_OPERATOR_PRINCIPAL_IDS }}
 
       # The tenant catalog is gitignored; Bicep and preflight need it.
       - name: Write the tenant catalog
@@ -55,14 +71,14 @@ jobs:
           New-CiTenantCatalog -TenantId $env:AZURE_TENANT_ID -TenantCode $env:CI_TENANT_CODE -Path infra/core/tenant-codes.json
 
       - name: Install azd
-        uses: Azure/setup-azd@v2
+        uses: Azure/setup-azd@0b7e3a35ab00f2eee7080c845eb39c3f0ebfa553 # v2.4.0
 
       - name: Sign the Azure CLI in
-        uses: azure/login@v2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign azd in
         shell: pwsh
@@ -95,6 +111,7 @@ jobs:
           ./scripts/set-deployment-tags.ps1
           Write-Output "Created the throwaway environment '$name' for the $env:CI_PROFILE profile."
 
+      # The full preview goes only to this step's masked log.
       - name: Preview (what-if)
         id: preview
         shell: pwsh
@@ -104,7 +121,7 @@ jobs:
           azd provision --preview --no-prompt -e $env:ENV_NAME 2>&1 | Tee-Object -FilePath preview.txt
           if ($LASTEXITCODE) { throw "The preview failed with exit code $LASTEXITCODE." }
 
-      - name: Publish the preview
+      - name: Publish the what-if counts
         if: always() && steps.env.outputs.name != ''
         shell: pwsh
         env:
@@ -140,11 +157,11 @@ jobs:
       # The first sign-in can expire during a long full-profile run.
       - name: Refresh the Azure sign-in
         if: always() && steps.env.outputs.name != ''
-        uses: azure/login@v2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Tear down
         if: always() && steps.env.outputs.name != ''

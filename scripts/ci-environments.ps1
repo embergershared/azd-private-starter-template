@@ -6,7 +6,8 @@
     Dot-source this file. It names the throwaway environments that
     .github/workflows/deploy-environment.yml creates, recognizes them again for
     teardown, decides which profiles a run deploys and formats the what-if
-    preview for the pull request. docs/ci-deployment.md describes the workflows.
+    preview counts for the pull request. docs/ci-deployment.md describes the
+    workflows.
 
     Every throwaway environment name matches $CiEnvironmentNamePattern, and the
     teardown and nightly cleanup never touch a resource group whose name does
@@ -72,10 +73,10 @@ function New-CiTenantCatalog {
 
     $parsed = [guid]::Empty
     if (-not [guid]::TryParse($TenantId, [ref] $parsed)) {
-        throw 'The AZURE_TENANT_ID repository variable must be the tenant GUID. See docs/ci-deployment.md.'
+        throw 'The AZURE_TENANT_ID repository secret must be the tenant GUID. See docs/ci-deployment.md.'
     }
     if ($TenantCode -cnotmatch '^[a-z0-9]{2,12}$') {
-        throw 'The CI_TENANT_CODE repository variable must be the tenant''s code: 2-12 lowercase alphanumeric characters. See docs/ci-deployment.md.'
+        throw 'The CI_TENANT_CODE repository secret must be the tenant''s code: 2-12 lowercase alphanumeric characters. See docs/ci-deployment.md.'
     }
     if (Test-Path -LiteralPath $Path) {
         throw "The tenant catalog '$Path' already exists; the runner's checkout must not carry one."
@@ -142,13 +143,40 @@ function Get-CiDeploymentProfiles {
     }
 }
 
+# The operations `azd provision --preview` prints at the start of each resource
+# line, in the order the comment lists them. azd shows NoChange and Ignore as Skip.
+$script:CiPreviewOperations = @('Create', 'Modify', 'Delete', 'Deploy', 'Skip', 'Unsupported')
+
+function Get-PreviewCounts {
+    <#
+    .SYNOPSIS
+        Counts the resources of `azd provision --preview` output by operation.
+    .DESCRIPTION
+        azd prints one line per resource, `<Operation> : <Type> : <Name>`, with
+        the property changes indented below it. Only the operations are kept:
+        names and property values identify the tenant's resources.
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Preview)
+
+    $counts = [ordered] @{}
+    foreach ($operation in $script:CiPreviewOperations) { $counts[$operation] = 0 }
+    $pattern = '^\s*(?<op>' + ($script:CiPreviewOperations -join '|') + ')\s+:\s+\S.*?\s:\s'
+    foreach ($line in (($Preview -replace "`e\[[0-9;?]*[A-Za-z]", '') -split "`r?`n")) {
+        if ($line -cmatch $pattern) { $counts[$Matches['op']]++ }
+    }
+    return $counts
+}
+
 function ConvertTo-PreviewComment {
     <#
     .SYNOPSIS
-        Formats `azd provision --preview` output as a pull request comment.
+        Formats the counts of `azd provision --preview` as a pull request comment.
     .DESCRIPTION
-        Strips terminal color codes, keeps the comment under GitHub's size limit
-        and starts with a marker so a later run edits the same comment.
+        The repository is public, so the comment and the job summary carry only
+        how many resources each operation touches; the full preview stays in the
+        masked run log. The comment starts with a marker so a later run edits it.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -157,36 +185,38 @@ function ConvertTo-PreviewComment {
         [Parameter(Mandatory)] [string] $EnvironmentName,
         [Parameter(Mandatory)] [AllowEmptyString()] [string] $Preview,
         [Parameter(Mandatory)] [ValidateSet('success', 'failure', 'cancelled', 'skipped')] [string] $Outcome,
-        [string] $RunUrl = '',
-        [int] $MaxPreviewLength = 60000
+        [string] $RunUrl = ''
     )
 
-    $clean = ($Preview -replace "`e\[[0-9;?]*[A-Za-z]", '' -replace "`r", '').Trim()
-    if ($clean.Length -gt $MaxPreviewLength) {
-        $clean = $clean.Substring(0, $MaxPreviewLength) + "`n... (truncated; the full preview is in the run log)"
-    }
-    # A fence longer than any backtick run in the text keeps the block intact.
-    $longest = @([regex]::Matches($clean, '`+') | ForEach-Object { $_.Length } | Sort-Object -Descending)
-    $fence = '`' * [Math]::Max(3, $(if ($longest.Count) { $longest[0] + 1 } else { 3 }))
     $status = switch ($Outcome) {
         'success' { 'succeeded' }
         'failure' { 'failed' }
         'cancelled' { 'was cancelled' }
         'skipped' { 'did not run' }
     }
+    $counts = Get-PreviewCounts -Preview $Preview
+    $total = ($counts.Values | Measure-Object -Sum).Sum
+    $result = if ($total -gt 0) {
+        $parts = @(
+            "$($counts.Create) to create", "$($counts.Modify) to modify", "$($counts.Delete) to delete"
+            if ($counts.Deploy) { "$($counts.Deploy) to deploy" }
+            "$($counts.Skip) unchanged"
+            if ($counts.Unsupported) { "$($counts.Unsupported) unsupported" }
+        )
+        "Resources: $($parts -join ', ')."
+    }
+    elseif ($Outcome -eq 'success') { 'Resources: the preview listed no resources.' }
+    else { 'Resources: none counted.' }
+
     $lines = @(
         "<!-- pr-deployment:$DeploymentProfile -->"
         "### What-if: ``$DeploymentProfile`` profile"
         ''
         "The preview for the throwaway environment ``$EnvironmentName`` $status." + $(if ($RunUrl) { " [Run log]($RunUrl)" } else { '' })
         ''
-        '<details><summary>azd provision --preview</summary>'
+        $result
         ''
-        "${fence}text"
-        $(if ($clean) { $clean } else { '(no output)' })
-        $fence
-        ''
-        '</details>'
+        'The resources and their changes are only in the run log, which masks identifiers.'
     )
     return ($lines -join "`n")
 }
