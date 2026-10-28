@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- .NET and Python scaffolding: SDK and Python pins, central NuGet versions, the approved feed,
+  hash-locked requirements, the 7-day package age gate, database backup and migration scripts;
+  CI builds, lints and tests a stack once the repository has its code (#16).
 - CI: one **CI result** check sums up the workflow lint and the infrastructure validation;
   **PR rules** checks the branch name, the linked issue, authorship and commit style; Dependabot
   updates the pinned workflow actions after a 7-day cooldown (#15).
