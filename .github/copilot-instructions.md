@@ -218,12 +218,19 @@ azd provision --preview -e <environment>  # what would change in Azure; changes 
 CI runs the first four in `.github/workflows/infra-validation.yml`, with a JSON parse and a
 PowerShell syntax check. Parse PowerShell with its AST before running a changed script.
 
+`pr-deployment.yml`, `pr-deployment-full.yml` and `pr-deployment-cleanup.yml` deploy pull
+requests into throwaway environments through the reusable `deploy-environment.yml`, and stay
+skipped until the `AZURE_CLIENT_ID` repository variable is set; see `docs/ci-deployment.md`.
+Keep `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the `paths` filter of
+`pr-deployment-full.yml` in step.
+
 ### Local tenant and subscription files (always)
 
 `infra/core/tenant-codes.json` and `docs/targets.md` name real tenants and subscriptions. They
 are gitignored, created from their committed `.example` files by
 `scripts/init-from-template.ps1`, and never committed. Put only fictitious values in the
-examples.
+examples. The deployment workflows write a one-tenant catalog on the runner from the
+`AZURE_TENANT_ID` and `CI_TENANT_CODE` repository variables.
 
 ### Azure deployment
 

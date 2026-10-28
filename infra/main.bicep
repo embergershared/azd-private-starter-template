@@ -91,6 +91,9 @@ param enableShutdownSchedules bool?
 @description('Create configured operator RBAC assignments. Disable when the deployer lacks roleAssignments/write.')
 param enableRoleAssignments bool = true
 
+@description('Turn on Key Vault purge protection. Off only for throwaway environments, such as pull request deployments, whose vault must be purged on teardown. It cannot be turned off on a vault that already has it.')
+param enableKeyVaultPurgeProtection bool = true
+
 @description('Base64-encoded JSON object overriding profile feature flags. Supported keys: network, keyVault, storage, bastion, windowsVm, linuxVm, natGateway, entraLogin, shutdownSchedules, roleAssignments. natGateway and entraLogin must match.')
 param featureOverridesBase64 string = 'e30='
 
@@ -473,6 +476,7 @@ module keyVault './modules/key-vault/main.bicep' = if (deployKeyVault) {
     linuxAdminUsername: linuxAdminUsername
     enableRoleAssignments: assignRoles
     operatorPrincipalIds: operatorPrincipalIds
+    enablePurgeProtection: enableKeyVaultPurgeProtection
   }
 }
 

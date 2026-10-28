@@ -39,6 +39,7 @@ from trusted Azure services with a deny-by-default firewall.
 | `windowsAdminPassword` / `linuxAdminPassword` | securestring | no | Defaults to `newGuid()` |
 | `enableRoleAssignments` | bool | no | Default `true` |
 | `operatorPrincipalIds` | array | no | Granted Key Vault Secrets User |
+| `enablePurgeProtection` | bool | no | Default `true`. Off only for throwaway environments; it cannot be turned off on a vault that has it |
 
 ## Outputs
 

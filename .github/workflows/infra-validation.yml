@@ -5,7 +5,7 @@ on:
     paths:
       - ".azure/**"
       - ".github/instructions/**"
-      - ".github/workflows/infra-validation.yml"
+      - ".github/workflows/**"
       - "infra/**"
       - "scripts/**"
       - "tests/**"
