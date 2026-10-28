@@ -164,6 +164,6 @@ workflow is `.github/workflows/infra-validation.yml`.
 - Never read live `.env` or `.env.*` files. Use `.env.example`, `.env.sample`,
   or `.env.template` for schema information.
 - For issue work, use `<prefix>/<type>/<issue-number>-<kebab-case-slug>`
-  branches (prefix `emberger/` in embergershared repositories), never `squad/`.
-  Never commit or push to `main` directly: changes reach it only through a PR.
-  Reference the issue with `Closes #<number>`.
+  branches (prefix `emm/` in g62priv repositories, `emberger/` in embergershared
+  ones), never `squad/`. Never commit or push to `main` directly: changes reach
+  it only through a PR. Reference the issue with `Closes #<number>`.
