@@ -157,12 +157,19 @@ clean, that every module's dependencies still resolve to well-formed resource
 IDs when its optional inputs keep their defaults, and that `core` produces no
 `Microsoft.Network` or `Microsoft.Compute` resources.
 
+Pull requests that change infrastructure can also be deployed for real before
+they merge. Throwaway `core` and `private` environments are previewed,
+provisioned, checked and torn down, and `full` is deployed on request. It is
+off until you create the deployment identity; see
+[pull request deployments](docs/ci-deployment.md).
+
 ## Documentation
 
 - [Architecture and extension points](docs/architecture.md)
 - [Module catalog and lifecycle scripts](docs/modules.md)
 - [Profiles and expert overrides](docs/configuration.md)
 - [Deployment, access, cost, and teardown](docs/deployment.md)
+- [Pull request deployments](docs/ci-deployment.md)
 - [Security, private DNS, monitoring access, and break glass](docs/security.md)
 
 Environments deployed by an earlier revision with Azure Monitor private link
