@@ -26,6 +26,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   down before they merge, once the deployment identity is set up (#21).
 
 ### Changed
+- The history no longer holds the owner's real tenant and subscription IDs: every commit was
+  rewritten with fictitious values, so existing clones must clone again
+  ([decision 0001](decisions/0001-history-scrub.md), #19).
 - `scripts/init-from-template.ps1` is now `scripts/init-local-files.ps1`: it creates each
   clone's local tenant files, and `Initialize-Repo.ps1` does the one-time setup (#17).
 - The tenant catalog and the targets page are local to each clone, created from their
