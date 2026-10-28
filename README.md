@@ -169,8 +169,3 @@ Environments deployed by an earlier revision with Azure Monitor private link
 require the ordered cleanup described in
 [deployment migration guidance](docs/deployment.md#migrating-an-environment-that-previously-used-azure-monitor-private-link)
 before reprovisioning.
-
-This repository also contains an installed Squad workspace. Do not repurpose or
-rewrite Squad-owned files under `.squad/templates/` or the coordinator agent.
-Squad's GitHub Actions workflows are deliberately not installed; if
-`squad upgrade` adds them back, remove them.
