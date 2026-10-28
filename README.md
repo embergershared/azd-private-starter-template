@@ -164,6 +164,8 @@ IDs when its optional inputs keep their defaults, and that `core` produces no
 - [Profiles and expert overrides](docs/configuration.md)
 - [Deployment, access, cost, and teardown](docs/deployment.md)
 - [Security, private DNS, monitoring access, and break glass](docs/security.md)
+- [Rules for contributors and AI agents](.github/copilot-instructions.md), with the
+  per-language ones in [`.github/instructions/`](.github/instructions/)
 
 Environments deployed by an earlier revision with Azure Monitor private link
 require the ordered cleanup described in
