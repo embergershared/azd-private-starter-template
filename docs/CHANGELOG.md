@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- CI: one **CI result** check sums up the workflow lint and the infrastructure validation;
+  **PR rules** checks the branch name, the linked issue, authorship and commit style; Dependabot
+  updates the pinned workflow actions after a 7-day cooldown (#15).
 - Public repository pages: MIT license, security policy, support, contributing, code of
   conduct, this changelog, decision records, a PR template and issue forms. The README is a
   table of contents; its how-to moved to [getting-started.md](getting-started.md) (#14).

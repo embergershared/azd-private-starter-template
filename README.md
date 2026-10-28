@@ -39,6 +39,7 @@ __DESCRIPTION__
 | [docs/deployment.md](docs/deployment.md) | Prerequisites and roles, prepare → validate → deploy, Bastion access, cost and teardown |
 | [docs/modules.md](docs/modules.md) | The module catalog and its lifecycle scripts |
 | [docs/security.md](docs/security.md) | Public exceptions, private DNS, monitoring access, break glass |
+| [docs/ci-cd.md](docs/ci-cd.md) | CI, PR rules, public logs and the repository settings |
 | [docs/ci-deployment.md](docs/ci-deployment.md) | Pull request deployments into throwaway environments |
 | [docs/SUPPORT.md](docs/SUPPORT.md) | Questions, bugs, and what support to expect |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | Changes |
