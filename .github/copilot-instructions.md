@@ -232,7 +232,7 @@ skipped until the `PR_DEPLOYMENT_ENABLED` repository variable is `true`; see
 
 `infra/core/tenant-codes.json` and `docs/targets.md` name real tenants and subscriptions. They
 are gitignored, created from their committed `.example` files by
-`scripts/init-from-template.ps1`, and never committed. Put only fictitious values in the
+`scripts/init-local-files.ps1`, and never committed. Put only fictitious values in the
 examples. The deployment workflows write a one-tenant catalog on the runner from the
 `AZURE_TENANT_ID` and `CI_TENANT_CODE` repository secrets.
 
