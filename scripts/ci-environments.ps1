@@ -60,6 +60,31 @@ function Test-CiEnvironmentName {
     return ([string] $Name) -cmatch $script:CiEnvironmentNamePattern
 }
 
+# The tenant catalog is gitignored, so a runner's checkout has none. The
+# deployment job writes one holding only the tenant it deploys to.
+function New-CiTenantCatalog {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()] [string] $TenantId,
+        [AllowEmptyString()] [string] $TenantCode,
+        [Parameter(Mandatory)] [string] $Path
+    )
+
+    $parsed = [guid]::Empty
+    if (-not [guid]::TryParse($TenantId, [ref] $parsed)) {
+        throw 'The AZURE_TENANT_ID repository variable must be the tenant GUID. See docs/ci-deployment.md.'
+    }
+    if ($TenantCode -cnotmatch '^[a-z0-9]{2,12}$') {
+        throw 'The CI_TENANT_CODE repository variable must be the tenant''s code: 2-12 lowercase alphanumeric characters. See docs/ci-deployment.md.'
+    }
+    if (Test-Path -LiteralPath $Path) {
+        throw "The tenant catalog '$Path' already exists; the runner's checkout must not carry one."
+    }
+
+    $catalog = [ordered] @{ $TenantId.Trim().ToLowerInvariant() = [ordered] @{ name = 'CI'; code = $TenantCode } }
+    Set-Content -LiteralPath $Path -Value (ConvertTo-Json -InputObject $catalog -Depth 3)
+}
+
 function Test-InfrastructureChange {
     <#
     .SYNOPSIS

@@ -28,6 +28,29 @@ Test-Case 'throwaway environment names fit AZURE_ENV_NAME and are recognized aga
     Assert-Throws -Action { Get-CiEnvironmentName -DeploymentProfile minimal -RunNumber 1 } -Message 'Only the three profiles are allowed.'
 }
 
+Test-Case 'the runner gets a one-tenant catalog that naming accepts, and bad variables fail' {
+    . (Get-RepoPath 'scripts/naming.ps1')
+    $tenantId = '11111111-2222-3333-4444-555555555555'
+    $path = Join-Path ([IO.Path]::GetTempPath()) ("tenant-codes-$([guid]::NewGuid().ToString('N')).json")
+    try {
+        New-CiTenantCatalog -TenantId $tenantId.ToUpperInvariant() -TenantCode 'cal01' -Path $path
+        Assert-Equal -Actual (Get-TenantCode -TenantId $tenantId -CatalogPath $path) -Expected 'cal01' -Message 'Naming must read the code the job wrote.'
+        Assert-Throws -Action { New-CiTenantCatalog -TenantId $tenantId -TenantCode 'cal01' -Path $path } -Message 'An existing catalog must never be overwritten.'
+    }
+    finally {
+        Remove-Item -LiteralPath $path -ErrorAction SilentlyContinue
+    }
+    $unused = Join-Path ([IO.Path]::GetTempPath()) ("tenant-codes-$([guid]::NewGuid().ToString('N')).json")
+    foreach ($case in @(@('', 'cal01'), @('not-a-guid', 'cal01'), @($tenantId, ''), @($tenantId, 'Cal01'), @($tenantId, 'c'))) {
+        Assert-Throws -Action { New-CiTenantCatalog -TenantId $case[0] -TenantCode $case[1] -Path $unused } `
+            -Message "Tenant '$($case[0])' with code '$($case[1])' must fail with setup guidance."
+    }
+    Assert-True -Condition (-not (Test-Path -LiteralPath $unused)) -Message 'A failed call must write nothing.'
+    $deploy = Get-Content -LiteralPath (Join-Path $workflowRoot 'deploy-environment.yml') -Raw
+    Assert-Match -Actual $deploy -Pattern '(?s)actions/checkout@v4\s+.*?- name: Write the tenant catalog.*?- name: Sign the Azure CLI in' `
+        -Message 'The job must write the catalog before anything compiles Bicep.'
+}
+
 Test-Case 'only infrastructure changes deploy, and a manual run deploys its one profile' {
     foreach ($path in @('infra/main.bicep', 'infra/modules/network/main.bicep', 'scripts/preflight.ps1', 'azure.yaml', '.github/workflows/deploy-environment.yml', 'infra\core\naming.bicep')) {
         Assert-True -Condition (Test-InfrastructureChange -Path @('README.md', $path)) -Message "'$path' must count as an infrastructure change."
