@@ -8,7 +8,7 @@ name: PR deployment
 #
 # "PR deployment result" is the one check to require in a ruleset. It always
 # reports, so pull requests that change no infrastructure are not blocked.
-# Until the AZURE_CLIENT_ID repository variable is set every job is skipped.
+# Until the PR_DEPLOYMENT_ENABLED repository variable is 'true' every job is skipped.
 # Setup: docs/ci-deployment.md.
 on:
   pull_request:
@@ -29,14 +29,16 @@ jobs:
     name: Plan
     # Pull requests from forks never receive Azure credentials.
     if: >-
-      vars.AZURE_CLIENT_ID != '' &&
+      vars.PR_DEPLOYMENT_ENABLED == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       profiles: ${{ steps.plan.outputs.profiles }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The pull request merge commit and its base parent.
           fetch-depth: 2
 
@@ -68,6 +70,7 @@ jobs:
       matrix:
         profile: ${{ fromJson(needs.plan.outputs.profiles) }}
     uses: ./.github/workflows/deploy-environment.yml
+    secrets: inherit
     with:
       profile: ${{ matrix.profile }}
     permissions:
@@ -78,8 +81,9 @@ jobs:
   result:
     name: PR deployment result
     needs: [plan, deploy]
-    if: always() && vars.AZURE_CLIENT_ID != ''
+    if: always() && vars.PR_DEPLOYMENT_ENABLED == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Report
         shell: pwsh
