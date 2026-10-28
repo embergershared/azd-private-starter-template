@@ -51,7 +51,7 @@ Every change starts with an issue, gets its own `<type>/<issue>-<slug>` branch, 
 | Page | What it covers |
 |---|---|
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md), [docs/CODE_OF_CONDUCT.md](docs/CODE_OF_CONDUCT.md) | How to contribute |
-| [.github/copilot-instructions.md](.github/copilot-instructions.md) | The full rules, for people and AI coding assistants |
+| [.github/copilot-instructions.md](.github/copilot-instructions.md), [.github/instructions/](.github/instructions/) | The full rules, for people and AI coding assistants, and the per-language ones |
 | [docs/decisions/](docs/decisions/) | Decision records |
 | [.github/SECURITY.md](.github/SECURITY.md) | Reporting a vulnerability |
 
