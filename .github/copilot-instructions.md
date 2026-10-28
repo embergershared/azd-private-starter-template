@@ -155,14 +155,18 @@ workflow is `.github/workflows/infra-validation.yml`.
 
 ## Architecture
 
-- `infra-validation.yml` validates infrastructure changes on pull requests,
-  and `template-init.yml` replaces the template owner's specifics in a new
-  repository. `pr-deployment.yml`, `pr-deployment-full.yml` and
-  `pr-deployment-cleanup.yml` deploy pull requests into throwaway environments
-  through the reusable `deploy-environment.yml`, and stay skipped until the
-  `AZURE_CLIENT_ID` repository variable is set; see `docs/ci-deployment.md`.
-  Keep `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the
-  `paths` filter of `pr-deployment-full.yml` in step.
+- `infra-validation.yml` validates infrastructure changes on pull requests.
+  `pr-deployment.yml`, `pr-deployment-full.yml` and `pr-deployment-cleanup.yml`
+  deploy pull requests into throwaway environments through the reusable
+  `deploy-environment.yml`, and stay skipped until the `AZURE_CLIENT_ID`
+  repository variable is set; see `docs/ci-deployment.md`. Keep
+  `$CiInfrastructurePaths` in `scripts/ci-environments.ps1` and the `paths`
+  filter of `pr-deployment-full.yml` in step.
+- `infra/core/tenant-codes.json` and `docs/targets.md` name real tenants: they
+  are gitignored, created from their committed `.example` files by
+  `scripts/init-from-template.ps1`, and never committed. Put only fictitious
+  values in the examples. The deployment workflows write a one-tenant catalog
+  on the runner from the `AZURE_TENANT_ID` and `CI_TENANT_CODE` variables.
 
 ## Repository conventions
 

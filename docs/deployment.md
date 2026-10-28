@@ -130,30 +130,35 @@ If `AZURE_SUBSCRIPTION_ID` is not set, the bootstrap uses the subscription the
 Azure CLI is signed in to. The bootstrap and preflight both fail when the Azure
 CLI and `azd` target different subscriptions.
 
-### Starting a repository from the template
+### Local tenant and subscription files
 
-The template repository commits its owner's tenants and subscriptions in
-[`docs/targets.md`](targets.md) and `infra/core/tenant-codes.json`. Each has an
-`.example` sibling with placeholder values. On a new repository's first push to
-`main`, the `template-init` workflow runs `scripts/init-from-template.ps1`,
-which copies each example over its specifics file and commits the result. If
-the workflow did not run (Actions disabled, or read-only workflow permissions),
-run the script yourself before the first deployment:
+The tenants and subscriptions a clone deploys to identify real tenants, so they
+are never committed: `infra/core/tenant-codes.json` and `docs/targets.md` are
+gitignored and local to each clone. Each has a committed `.example` sibling
+with placeholder values ([`targets.example.md`](targets.example.md) and
+`tenant-codes.example.json`). Bicep loads the catalog at compile time, so after
+cloning, and before the first preview, create both files from the examples
+(PowerShell, in the repository folder):
 
 ```powershell
 ./scripts/init-from-template.ps1
 ```
 
-Then record your own tenants in both files, as described below. Preflight and
-Bicep fail closed until the deployment's tenant is listed, so the example
-catalog cannot be deployed by mistake. Commit both files; they are this
-repository's specifics from then on, and the workflow never runs again.
+The script never overwrites a file that exists, so it is safe to run again; the
+test suite runs it too. Then record your own tenants in both files, as described
+below. Preflight and Bicep fail closed until the deployment's tenant is listed,
+so the example catalog cannot be deployed by mistake.
+
+Share the two files with the people who deploy the same targets outside git,
+for example through the team's password manager or a private repository. A
+private repository may commit them instead: remove their two lines from
+`.gitignore`. Never commit them in a public one.
 
 ### Deploy to another tenant or subscription
 
-The approved tenants are the ones listed in `infra/core/tenant-codes.json`, and
-[`docs/targets.md`](targets.md) records them with their subscriptions and the
-default target. Nothing else in the template is tied to a tenant or
+The approved tenants are the ones listed in your local
+`infra/core/tenant-codes.json`, and your local `docs/targets.md` records them
+with their subscriptions and the default target. Nothing else in the template is tied to a tenant or
 subscription. To target another one:
 
 1. **Approve the tenant.** Add it to `infra/core/tenant-codes.json` before its
