@@ -215,8 +215,10 @@ az bicep format --file <file>.bicep       # CI fails on unformatted Bicep
 azd provision --preview -e <environment>  # what would change in Azure; changes nothing
 ```
 
-CI runs the first four in `.github/workflows/infra-validation.yml`, with a JSON parse and a
-PowerShell syntax check. Parse PowerShell with its AST before running a changed script.
+CI runs the first four in the **Infrastructure validation** job of `.github/workflows/ci.yml`,
+with a JSON parse and a PowerShell syntax check, next to **Workflow lint**; **CI result** sums
+them up, and `pr-rules.yml` checks the PR itself (`docs/ci-cd.md`). Parse PowerShell with its
+AST before running a changed script.
 
 `pr-deployment.yml`, `pr-deployment-full.yml` and `pr-deployment-cleanup.yml` deploy pull
 requests into throwaway environments through the reusable `deploy-environment.yml`, and stay

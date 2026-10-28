@@ -194,29 +194,19 @@ If you set these up before the IDs became secrets, delete the old variables:
 
 ### 6. Make the check block merges
 
-Require **PR deployment result**, and the infrastructure validation's
-**validate** check, on `main`. The result check always reports, even for a
-pull request that changes no infrastructure, so requiring it never leaves a
-pull request waiting:
+Add **PR deployment result** to the required checks of the `main` ruleset,
+next to **CI result** and **PR rules** ([ci-cd.md](ci-cd.md#repository-settings)).
+It always reports, even for a pull request that changes no infrastructure, so
+requiring it never leaves a pull request waiting:
 
 ```powershell
-@{
-    name = 'main'; target = 'branch'; enforcement = 'active'
-    conditions = @{ ref_name = @{ include = @('~DEFAULT_BRANCH'); exclude = @() } }
-    rules = @(@{
-        type = 'required_status_checks'
-        parameters = @{
-            strict_required_status_checks_policy = $false
-            required_status_checks = @(
-                @{ context = 'PR deployment result'; integration_id = 15368 }
-                @{ context = 'validate'; integration_id = 15368 })
-        }
-    })
-} | ConvertTo-Json -Depth 8 | gh api --method POST "repos/$repo/rulesets" --input -
+$id = gh api "repos/$repo/rulesets" --jq '.[] | select(.name == "main") | .id'
+$ruleset = gh api "repos/$repo/rulesets/$id" | ConvertFrom-Json
+$checks = ($ruleset.rules | Where-Object type -eq 'required_status_checks').parameters
+$checks.required_status_checks += [pscustomobject] @{ context = 'PR deployment result'; integration_id = 15368 }
+$ruleset | Select-Object name, target, enforcement, conditions, rules, bypass_actors |
+    ConvertTo-Json -Depth 10 | gh api --method PUT "repos/$repo/rulesets/$id" --input -
 ```
-
-`validate` only runs when infrastructure files change. Leave it out if you
-also merge documentation-only pull requests.
 
 ## Using it
 
