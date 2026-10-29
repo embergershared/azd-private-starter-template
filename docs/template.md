@@ -13,7 +13,8 @@ project doesn't re-create them. Most of these projects are public: the template 
    new repository** (owner `embergershared` or `g62priv`, public).
 2. Clone it, then in its folder (PowerShell):
    ```powershell
-   ./scripts/Initialize-Repo.ps1 -Description '<one line about the project>' -Stacks dotnet,python
+   $Description = '<one line about the project>'
+   ./scripts/Initialize-Repo.ps1 -Description $Description -Stacks dotnet,python
    ```
    `-Stacks dotnet` or `-Stacks python` removes the other stack's files. `-WhatIf` shows what
    would change; `-SkipGitHub` only edits the files.
