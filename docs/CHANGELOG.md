@@ -36,4 +36,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 - The Squad agent workspace (#11).
+
+### Fixed
+- A new repository no longer opens with a Dependabot PR for `actions/setup-python`: CI pins
+  v7.1.0 (#34).
 <!-- template:end -->
