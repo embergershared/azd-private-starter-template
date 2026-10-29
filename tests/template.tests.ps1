@@ -105,6 +105,26 @@ Test-Case 'Initialize-Repo -WhatIf changes nothing, and it refuses the template 
     }
 }
 
+# Only tests/ci.tests.ps1 reads the stack files, so it is the suite a one-stack project could break.
+foreach ($stack in 'dotnet', 'python') {
+    Test-Case "a project that keeps only $stack passes its own CI tests" {
+        $root = New-TemplateCopy
+        Set-GhMock
+        try {
+            $null = & (Join-Path $root 'scripts/Initialize-Repo.ps1') -Stacks $stack -SkipGitHub 6>$null
+            # Its own process: the copy's runner must not reset this run's results.
+            $output = & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $root 'tests/run-tests.ps1') -Name ci 2>&1
+            $exitCode = $LASTEXITCODE
+            Assert-Equal -Actual $exitCode -Expected 0 `
+                -Message "The CI tests of a $stack-only project must pass:`n$(@($output | Select-String -Pattern '[FAIL]' -SimpleMatch -CaseSensitive -Context 0, 1) -join "`n")"
+        }
+        finally {
+            Remove-Item Function:\gh, Variable:\GhMockView -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 Test-Case 'Initialize-Repo uses the owner prefix of the rules and the checks CI reports' {
     $script = Get-Content -LiteralPath (Get-RepoPath 'scripts/Initialize-Repo.ps1') -Raw
     Assert-Match -Actual $script -Pattern "'embergershared' \{ 'emberger/' \}" -Message 'embergershared branches take emberger/.'

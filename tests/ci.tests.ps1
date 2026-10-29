@@ -520,24 +520,37 @@ Test-Case 'CI detects a stack only from tracked files, and the repository variab
 }
 
 Test-Case 'the code scaffolding restores from the approved feed only, locked, and CI checks the package age' {
-    [xml] $nuget = Get-Content -LiteralPath (Get-RepoPath 'nuget.config') -Raw
-    $sources = $nuget.configuration.packageSources
-    Assert-True -Condition ($null -ne $sources.SelectSingleNode('clear')) -Message 'nuget.config must clear every inherited feed.'
-    $feeds = @($sources.SelectNodes('add') | ForEach-Object { $_.value })
-    Assert-Equal -Actual ($feeds -join ',') -Expected 'https://packagefeedproxy.microsoft.io/nuget/v3/index.json' `
-        -Message 'NuGet must restore from the approved feed only, with no nuget.org fallback.'
-    $props = Get-Content -LiteralPath (Get-RepoPath 'Directory.Build.props') -Raw
-    Assert-Match -Actual $props -Pattern '<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>' -Message 'Every .NET project must have a lock file.'
-    Assert-Match -Actual $props -Pattern '<RestoreLockedMode Condition="''\$\(ContinuousIntegrationBuild\)'' == ''true''">true</RestoreLockedMode>' -Message 'CI must restore exactly the locked versions.'
-    Assert-Match -Actual (Get-Content -LiteralPath (Get-RepoPath 'Directory.Packages.props') -Raw) -Pattern '<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>' `
-        -Message 'NuGet versions must be set centrally.'
-    Assert-True -Condition ($null -ne (Get-Content -LiteralPath (Get-RepoPath 'global.json') -Raw | ConvertFrom-Json).sdk.version) -Message 'global.json must pin the SDK.'
-    Assert-Match -Actual (Get-Content -LiteralPath (Get-RepoPath '.python-version') -Raw) -Pattern '^3\.\d+\s*$' -Message '.python-version must pin a Python 3 release.'
+    # A project set up with Initialize-Repo.ps1 -Stacks keeps one stack; the template keeps both.
+    $dotnet = Test-Path -LiteralPath (Get-RepoPath 'nuget.config')
+    $python = Test-Path -LiteralPath (Get-RepoPath '.python-version')
+    if (Test-Path -LiteralPath (Get-RepoPath 'scripts/Initialize-Repo.ps1')) {
+        Assert-True -Condition ($dotnet -and $python) -Message 'The template must carry both stacks.'
+    }
+
+    if ($dotnet) {
+        [xml] $nuget = Get-Content -LiteralPath (Get-RepoPath 'nuget.config') -Raw
+        $sources = $nuget.configuration.packageSources
+        Assert-True -Condition ($null -ne $sources.SelectSingleNode('clear')) -Message 'nuget.config must clear every inherited feed.'
+        $feeds = @($sources.SelectNodes('add') | ForEach-Object { $_.value })
+        Assert-Equal -Actual ($feeds -join ',') -Expected 'https://packagefeedproxy.microsoft.io/nuget/v3/index.json' `
+            -Message 'NuGet must restore from the approved feed only, with no nuget.org fallback.'
+        $props = Get-Content -LiteralPath (Get-RepoPath 'Directory.Build.props') -Raw
+        Assert-Match -Actual $props -Pattern '<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>' -Message 'Every .NET project must have a lock file.'
+        Assert-Match -Actual $props -Pattern '<RestoreLockedMode Condition="''\$\(ContinuousIntegrationBuild\)'' == ''true''">true</RestoreLockedMode>' -Message 'CI must restore exactly the locked versions.'
+        Assert-Match -Actual (Get-Content -LiteralPath (Get-RepoPath 'Directory.Packages.props') -Raw) -Pattern '<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>' `
+            -Message 'NuGet versions must be set centrally.'
+        Assert-True -Condition ($null -ne (Get-Content -LiteralPath (Get-RepoPath 'global.json') -Raw | ConvertFrom-Json).sdk.version) -Message 'global.json must pin the SDK.'
+        Assert-True -Condition (Test-Path -LiteralPath (Get-RepoPath 'scripts/db/Invoke-EfMigration.ps1')) -Message 'The EF Core migration script must be in the repository.'
+    }
+    if ($python) {
+        Assert-Match -Actual (Get-Content -LiteralPath (Get-RepoPath '.python-version') -Raw) -Pattern '^3\.\d+\s*$' -Message '.python-version must pin a Python 3 release.'
+        Assert-True -Condition (Test-Path -LiteralPath (Get-RepoPath 'scripts/lock_requirements.py')) -Message 'The lock script must be in the repository.'
+    }
 
     $ci = Get-Content -LiteralPath (Join-Path $workflowRoot 'ci.yml') -Raw
     Assert-Match -Actual $ci -Pattern 'python scripts/check_package_age\.py --min-age-days 7' -Message 'CI must run the 7-day age gate.'
     Assert-Match -Actual $ci -Pattern 'pip install --require-hashes' -Message 'CI must install Python packages by hash only.'
-    foreach ($script in 'scripts/check_package_age.py', 'scripts/lock_requirements.py', 'scripts/db/sqlite_backup.py', 'scripts/db/Invoke-EfMigration.ps1') {
+    foreach ($script in 'scripts/check_package_age.py', 'scripts/db/sqlite_backup.py') {
         Assert-True -Condition (Test-Path -LiteralPath (Get-RepoPath $script)) -Message "'$script' must be in the repository."
     }
 }
