@@ -13,7 +13,8 @@ __DESCRIPTION__
 > Create a repository with **Use this template**, clone it, then run once (PowerShell, in its
 > folder):
 > ```powershell
-> ./scripts/Initialize-Repo.ps1 -Description '<one line about the project>' -Stacks dotnet,python
+> $Description = '<one line about the project>'
+> ./scripts/Initialize-Repo.ps1 -Description $Description -Stacks dotnet,python
 > ```
 > It names the project, removes the stacks you don't use, sets the repository up and opens
 > the first PR; see [docs/template.md](docs/template.md). Then record your tenants in the
