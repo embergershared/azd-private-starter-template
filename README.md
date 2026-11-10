@@ -16,9 +16,10 @@ __DESCRIPTION__
 > $Description = '<one line about the project>'
 > ./scripts/Initialize-Repo.ps1 -Description $Description -Stacks dotnet,python
 > ```
-> It names the project, removes the stacks you don't use, sets the repository up and opens
-> the first PR; see [docs/template.md](docs/template.md). Then record your tenants in the
-> local files it created and follow [docs/getting-started.md](docs/getting-started.md).
+> It names the project, moves the description into **Overview** and the note below to the
+> bottom, removes the stacks you don't use, sets the repository up and opens the first PR;
+> see [docs/template.md](docs/template.md). Then record your tenants in the local files it
+> created and follow [docs/getting-started.md](docs/getting-started.md).
 <!-- template:end -->
 
 > [!NOTE]
@@ -28,8 +29,8 @@ __DESCRIPTION__
 
 ## Overview
 
-<!-- Keep this section: a few lines on what the project does and for whom. The details go in
-     docs/architecture.md. -->
+<!-- Keep this section: a few lines on what the project does and for whom. Initialize-Repo.ps1
+     puts the project's description first. The details go in docs/architecture.md. -->
 
 ## Quick start
 
@@ -40,7 +41,8 @@ __DESCRIPTION__
 ## Contents
 
 <!-- Keep this README short: the Overview and Quick start above, then this table of contents of
-     the pages. Background, how-tos and long explanations go in docs/, one page per topic. -->
+     the pages, the license and the personal-project note. Background, how-tos and long
+     explanations go in docs/, one page per topic. -->
 
 **Use it**
 

@@ -21,7 +21,9 @@ project doesn't re-create them. Most of these projects are public: the template 
    The script replaces the placeholders `__PROJECT_NAME__`, `__REPO__`, `__DESCRIPTION__` and
    `__YEAR__` (this file keeps them) and removes the Markdown between
    `<!-- template:start -->` and `<!-- template:end -->` (the README banner, the template's
-   changelog entries). It creates this clone's local tenant files from their examples
+   changelog entries). It lays the README out as the project's: the description opens
+   **Overview**, before **Quick start**, and the personal-project note moves to the bottom.
+   It creates this clone's local tenant files from their examples
    (`scripts/init-local-files.ps1`). It sets the repository (description, issues on, wiki off,
    branches deleted on merge, label `phase`, GitHub Actions) and, when it is public, its
    security features and the `main` ruleset (see [ci-cd.md](ci-cd.md#repository-settings)).
@@ -53,7 +55,7 @@ Every other clone of the project, and every CI runner, creates its local tenant 
 | `.github/actions/mask-values/` | Masks identifiers and the GUIDs inside them in a job's logs and summary (see [ci-cd.md](ci-cd.md#public-logs)). |
 | `.github/dependabot.yml` | GitHub Actions updates with a 7-day cooldown (NuGet and Docker ready to uncomment). |
 | `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | PR body and issue forms (feature, bug, phase). |
-| `README.md` | Project page: the description, the "personal project, not an official Microsoft product" note, the **Overview** and **Quick start** sections for the project to fill in, then a table of contents of the pages. |
+| `README.md` | Project page, kept short: **Overview** (what the project does and for whom, the description first), **Quick start** (the few commands from a clone to a first preview or deployment), a table of contents of the pages, the license, then the "personal project, not an official Microsoft product" note. In the template, the description sits under the title and the note above Overview; `Initialize-Repo.ps1` moves them, and stops before changing anything if the README lacks the banner, the description, the note or the Overview section. |
 | `.github/SECURITY.md`, `docs/SUPPORT.md`, `docs/CONTRIBUTING.md`, `docs/CODE_OF_CONDUCT.md` | Private vulnerability reporting, as-is support, how to contribute, Contributor Covenant. |
 | `.editorconfig`, `.gitattributes`, `.gitignore`, `.dockerignore` | Editor rules, line endings, ignored secrets, local azd state, tenant files, databases and build output. |
 | `global.json`, `Directory.Build.props`, `Directory.Packages.props`, `nuget.config` | .NET 10 SDK, `net10.0`, analyzers, lock files, central package versions, approved feed only. |

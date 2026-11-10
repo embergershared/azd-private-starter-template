@@ -55,7 +55,8 @@ Test-Case 'Initialize-Repo names the project, removes the template-only parts an
 
         Assert-Equal -Actual @(Get-Placeholders $root).Count -Expected 0 -Message 'No placeholder may be left outside docs/template.md.'
         $readme = Get-Content -LiteralPath (Join-Path $root 'README.md') -Raw
-        Assert-Match -Actual $readme -Pattern '^# budget-tracker\r?\n\r?\nBudget tracker on Azure\.' -Message 'The README must open with the project name and description.'
+        Assert-Match -Actual $readme -Pattern '(?s)^# budget-tracker\r?\n\r?\n## Overview\r?\n\r?\n<!--.*?-->\r?\n\r?\nBudget tracker on Azure\.\r?\n' -Message 'The README must open with the project name, then Overview with the description first.'
+        Assert-Match -Actual $readme -Pattern '\[MIT\]\(LICENSE\)\r?\n\r?\n> \[!NOTE\]\r?\n(>[^\r\n]*\r?\n)+\z' -Message 'The personal-project note must close the README, after the license.'
         Assert-Match -Actual $readme -Pattern '(?s)\n## Overview\r?\n.*\n## Quick start\r?\n.*\n## Contents\r?\n' -Message 'The README must keep its Overview and Quick start sections before Contents.'
         $rules = Get-Content -LiteralPath (Join-Path $root '.github/copilot-instructions.md') -Raw
         Assert-Match -Actual $rules -Pattern 'gh issue create --repo contoso/budget-tracker' -Message 'The rules must name the new repository.'
@@ -99,6 +100,73 @@ Test-Case 'Initialize-Repo -WhatIf changes nothing, and it refuses the template 
         Set-GhMock
         Set-Content -LiteralPath (Join-Path $root 'unrelated.txt') -Value 'work in progress'
         Assert-Throws -Action { & (Join-Path $root 'scripts/Initialize-Repo.ps1') -SkipGitHub 6>$null } -Message 'A tree with changes must be refused.'
+    }
+    finally {
+        Remove-Item Function:\gh -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Format-ProjectReadme on its own, taken from the script's syntax tree: running the script sets a repository up.
+$readmeFunction = [Management.Automation.Language.Parser]::ParseFile((Get-RepoPath 'scripts/Initialize-Repo.ps1'), [ref] $null, [ref] $null).Find({
+        param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Format-ProjectReadme'
+    }, $true)
+if (-not $readmeFunction) { throw 'scripts/Initialize-Repo.ps1 has no Format-ProjectReadme function.' }
+. ([scriptblock]::Create($readmeFunction.Extent.Text))
+
+foreach ($nl in "`n", "`r`n") {
+    $endings = if ($nl -eq "`n") { 'LF' } else { 'CRLF' }
+    Test-Case "Format-ProjectReadme lays out the template README ($endings): title, Overview with the description, Quick start, Contents, License, then the note" {
+        $template = (Get-Content -LiteralPath (Get-RepoPath 'README.md') -Raw) -replace '\r?\n', $nl
+        # Regex replacement tokens and quotes must stay literal.
+        $description = 'Budget "tracker" for $1, $$ and & it''s $0.'
+        $readme = Format-ProjectReadme $template $description
+        $n = [regex]::Escape($nl)
+
+        Assert-NotMatch -Actual $readme -Pattern 'template:(start|end)' -Message 'The banner must be removed.'
+        Assert-NotMatch -Actual $readme -Pattern '__DESCRIPTION__' -Message 'The description line under the title must be removed.'
+        Assert-Match -Actual $readme -Pattern "^# __PROJECT_NAME__$n$n## Overview$n" -Message 'The title must be followed directly by Overview.'
+        Assert-Match -Actual $readme -Pattern "(?s)$n## Overview$n$n<!--.*?-->$n$n$([regex]::Escape($description))$n$n## Quick start$n" `
+            -Message 'The description, literal, must open Overview after its comment, before Quick start.'
+        Assert-Match -Actual $readme -Pattern "(?s)## Quick start$n.*$n## Contents$n.*$n## License$n" -Message 'Quick start, Contents and License must follow in that order.'
+        Assert-Equal -Actual ([regex]::Matches($readme, '> \[!NOTE\]')).Count -Expected 1 -Message 'The note must appear once.'
+        Assert-Match -Actual $readme -Pattern "\[MIT\]\(LICENSE\)$n$n> \[!NOTE\]$n(>[^\r\n]*$n)+\z" -Message 'The note must be last, after the license.'
+        Assert-True -Condition ($readme.EndsWith($nl) -and -not $readme.EndsWith("$nl$nl")) -Message 'The README must end with one line break.'
+        $other = if ($nl -eq "`n") { "`r" } else { "(?<!`r)`n" }
+        Assert-NotMatch -Actual $readme -Pattern $other -Message "The README must keep its $endings line endings."
+    }
+}
+
+Test-Case 'Format-ProjectReadme stops, naming what is missing, when the README has no note, two notes or no Overview' {
+    $template = Get-Content -LiteralPath (Get-RepoPath 'README.md') -Raw
+    $note = [regex]::Match($template, '(?m)^> \[!NOTE\]\r?\n(>[^\r\n]*\r?\n)*').Value
+    Assert-True -Condition $note -Message 'The template README must have its note.'
+    $cases = [ordered]@{
+        'no note'     = @{ Text = $template.Replace($note, ''); Names = 'personal-project note' }
+        'two notes'   = @{ Text = $template.Replace($note, "$note`n$note"); Names = 'personal-project note' }
+        'no Overview' = @{ Text = $template -replace '(?m)^## Overview', '## About'; Names = "'## Overview' heading" }
+    }
+    foreach ($case in $cases.GetEnumerator()) {
+        $message = $null
+        try { $null = Format-ProjectReadme $case.Value.Text 'Budget tracker.' } catch { $message = $_.Exception.Message }
+        Assert-True -Condition $message -Message "A README with $($case.Key) must be refused."
+        Assert-Match -Actual $message -Pattern ([regex]::Escape($case.Value.Names)) -Message "The message for $($case.Key) must name what is missing."
+    }
+}
+
+Test-Case 'Initialize-Repo stops before changing any file when the README has no personal-project note' {
+    $root = New-TemplateCopy
+    Set-GhMock
+    try {
+        $readmePath = Join-Path $root 'README.md'
+        $text = [IO.File]::ReadAllText($readmePath)
+        [IO.File]::WriteAllText($readmePath, [regex]::Replace($text, '(?m)^> \[!NOTE\]\r?\n(>[^\r\n]*\r?\n)*(\r?\n)?', ''), [Text.UTF8Encoding]::new($false))
+        git -C $root -c user.name=test -c user.email=test@contoso.com -c commit.gpgsign=false commit -q -am 'No note.'
+        $message = $null
+        try { $null = & (Join-Path $root 'scripts/Initialize-Repo.ps1') -Description 'Budget tracker on Azure.' -SkipGitHub 6>$null } catch { $message = $_.Exception.Message }
+        Assert-True -Condition $message -Message 'A README without the note must stop the script.'
+        Assert-Match -Actual $message -Pattern 'personal-project note' -Message 'The message must name the note.'
+        Assert-Equal -Actual @(git -C $root status --porcelain --ignored).Count -Expected 0 -Message 'No file may change, and no local file be created.'
     }
     finally {
         Remove-Item Function:\gh -ErrorAction SilentlyContinue
