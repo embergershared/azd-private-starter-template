@@ -132,9 +132,11 @@ All work goes through it: features, fixes, optimizations, docs, refactors, and c
   only (DEBUG/INFO/WARNING/ERROR); never a custom level like VERBOSE.
 - **Docs:** update the matching docs (README, `docs/`, runbooks), `docs/CHANGELOG.md`, and this
   file in the same change when behavior, config, or a convention changes. `README.md` stays short:
-  an **Overview** and a **Quick start** (keep both sections, even while they only hold their
-  placeholder comment), then the **Contents** table of the pages. Background, how-tos and long
-  explanations go in `docs/`, one page per topic, linked from it.
+  an **Overview** (a few lines on what the project does and for whom) and a **Quick start** (the
+  few commands from a clone to a first run), both kept even while they only hold their
+  placeholder comment, then the **Contents** table of the pages, the license and the
+  personal-project note at the bottom. Background, how-tos and long explanations go in
+  `docs/`, one page per topic, linked from it.
 - **Microsoft and Azure docs:** look them up with the Microsoft Learn MCP tools first; say so
   when falling back to another source.
 
