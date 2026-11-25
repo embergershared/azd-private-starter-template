@@ -42,6 +42,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The Squad agent workspace (#11).
 
 ### Fixed
+- `azd provision --preview` of a new `full` environment no longer fails with "KeyVault could
+  not be found": the jumpbox passwords are generated once per deployment and handed to the
+  vault and the jumpboxes, instead of read back from the vault being created (#47).
 - A new repository no longer opens with a Dependabot PR for `actions/setup-python`: CI pins
   v7.1.0 (#34).
 <!-- template:end -->

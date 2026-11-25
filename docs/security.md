@@ -69,9 +69,14 @@ secrets in the template-created private Key Vault, and grants configured
 operators **Key Vault Secrets User**.
 
 Key Vault is RBAC-enabled, purge-protected, public-disabled, and
-`enabledForTemplateDeployment`. That last setting lets the ARM/Bicep deployment
-retrieve secure secret values for VM provisioning; it does not make the vault
-public or expose secrets as outputs.
+`enabledForTemplateDeployment`. That last setting lets ARM/Bicep deployments
+read its secrets as secure parameters; it does not make the vault public or
+expose secrets as outputs. The template itself does not read the jumpbox
+passwords back: each deployment generates them as secure parameters and hands
+the same values to the vault, which stores them, and to the jumpboxes, which
+reset their local administrators to them. Reading them back with `getSecret`
+from the vault the same deployment creates made `azd provision --preview` of a
+new `full` environment fail, because what-if checks the vault before it exists.
 
 Purge protection is on unless `AZURE_KEY_VAULT_PURGE_PROTECTION` is `false`.
 Only the throwaway [pull request deployments](ci-deployment.md) turn it off,
