@@ -299,6 +299,28 @@ Test-Case 'the full profile adds Bastion and the jumpboxes' {
     }
 }
 
+Test-Case 'the jumpbox passwords come from the deployment, not from a Key Vault reference' {
+    # A getSecret reference to the vault this deployment creates makes what-if
+    # validate the vault before it exists, so a new full environment fails
+    # preview. Both modules take the same generated secure parameter instead.
+    foreach ($name in @('windowsAdminPassword', 'linuxAdminPassword')) {
+        Assert-Equal -Actual $template.parameters.$name.type -Expected 'securestring' `
+            -Message "'$name' must be a secure parameter."
+        Assert-Equal -Actual $template.parameters.$name.defaultValue -Expected '[newGuid()]' `
+            -Message "'$name' must default to a new value per deployment, so every provision rotates it."
+
+        foreach ($deployment in @('keyVault', 'jumpboxes')) {
+            $value = $template.resources.$deployment.properties.parameters.$name
+            Assert-True -Condition ($value -isnot [string] -and $null -eq $value.PSObject.Properties['reference']) `
+                -Message "The $deployment module's '$name' must not be a Key Vault reference."
+            Assert-Equal -Actual $value.value -Expected "[parameters('$name')]" `
+                -Message "The $deployment module's '$name' must come from the shared '$name' parameter."
+        }
+    }
+    Assert-True -Condition (@($template.resources.jumpboxes.dependsOn) -contains 'keyVault') `
+        -Message 'The jumpboxes module must deploy after the vault that holds their passwords.'
+}
+
 Test-Case 'the template accepts only the three ladder profiles' {
     $allowed = @($template.parameters.deploymentProfile.allowedValues)
     Assert-Equal -Actual ($allowed -join ',') -Expected 'core,private,full' `

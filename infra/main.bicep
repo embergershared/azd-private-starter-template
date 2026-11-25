@@ -94,6 +94,19 @@ param enableRoleAssignments bool = true
 @description('Turn on Key Vault purge protection. Off only for throwaway environments, such as pull request deployments, whose vault must be purged on teardown. It cannot be turned off on a vault that already has it.')
 param enableKeyVaultPurgeProtection bool = true
 
+// Generated once per deployment and handed to both the Key Vault (which stores
+// them) and the jumpboxes (which reset their local administrators to them), so
+// every provision rotates them. Reading them back with getSecret from the vault
+// this deployment creates fails preview of a new environment: what-if validates
+// the vault reference before the vault exists.
+@description('Local administrator password for the Windows jumpbox. Leave unset: each deployment generates a new one and stores it in the Key Vault.')
+@secure()
+param windowsAdminPassword string = newGuid()
+
+@description('Local administrator password for the Ubuntu jumpbox. Leave unset: each deployment generates a new one and stores it in the Key Vault.')
+@secure()
+param linuxAdminPassword string = newGuid()
+
 @description('Base64-encoded JSON object overriding profile feature flags. Supported keys: network, keyVault, storage, bastion, windowsVm, linuxVm, natGateway, entraLogin, shutdownSchedules, roleAssignments. natGateway and entraLogin must match.')
 param featureOverridesBase64 string = 'e30='
 
@@ -473,7 +486,9 @@ module keyVault './modules/key-vault/main.bicep' = if (deployKeyVault) {
     enableWindowsVm: deployWindowsVm
     enableLinuxVm: deployLinuxVm
     windowsAdminUsername: windowsAdminUsername
+    windowsAdminPassword: windowsAdminPassword
     linuxAdminUsername: linuxAdminUsername
+    linuxAdminPassword: linuxAdminPassword
     enableRoleAssignments: assignRoles
     operatorPrincipalIds: operatorPrincipalIds
     enablePurgeProtection: enableKeyVaultPurgeProtection
@@ -532,9 +547,9 @@ module jumpboxes './modules/jumpboxes/main.bicep' = if (deployAnyVm) {
     windowsImage: windowsImage
     linuxImage: linuxImage
     windowsAdminUsername: windowsAdminUsername
-    windowsAdminPassword: deployWindowsVm ? deployedKeyVault.getSecret('windows-admin-password') : ''
+    windowsAdminPassword: windowsAdminPassword
     linuxAdminUsername: linuxAdminUsername
-    linuxAdminPassword: deployLinuxVm ? deployedKeyVault.getSecret('linux-admin-password') : ''
+    linuxAdminPassword: linuxAdminPassword
     enableEntraLogin: deployEntraLogin
     windowsMdmId: windowsMdmId
     credentialRotationTag: lastUpdatedOn
@@ -544,16 +559,13 @@ module jumpboxes './modules/jumpboxes/main.bicep' = if (deployAnyVm) {
     enableRoleAssignments: assignRoles
     operatorPrincipalIds: operatorPrincipalIds
   }
+  // The vault holds the password the jumpboxes are reset to, so it must exist
+  // before they change.
   dependsOn: [
     keyVault
   ]
 }
 // #endregion modules
-
-resource deployedKeyVault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
-  name: keyVaultName
-  scope: resourceGroup
-}
 
 output AZURE_RESOURCE_GROUP string = resourceGroup.name
 output AZURE_DEPLOYMENT_PROFILE string = deploymentProfile
